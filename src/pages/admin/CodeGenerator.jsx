@@ -97,7 +97,7 @@ export default function CodeGenerator() {
       ))
 
       await Promise.all(generatedCodes.map(code =>
-        fetch(`${XANO_BASE}/plan-activation-codes`, {
+        fetch(`${XANO_BASE}/plan-activation-code`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
