@@ -42,35 +42,35 @@ export default function Users() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold" style={{ color: '#1a2b4a' }}>Utilisateurs</h1>
+      <div className="mb-6 md:mb-8">
+        <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Utilisateurs</h1>
         <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>
           Données en temps réel depuis Xano
         </p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
         {[
           { label: 'Total utilisateurs', value: stats.total, color: '#2BBFB3' },
           { label: 'Hommes', value: stats.hommes, color: '#1a2b4a' },
           { label: 'Femmes', value: stats.femmes, color: '#d97706' },
           { label: 'Non précisé', value: stats.nonPrecise, color: '#8a93a2' },
         ].map(stat => (
-          <div key={stat.label} className="bg-white rounded-3xl p-6"
+          <div key={stat.label} className="bg-white rounded-2xl md:rounded-3xl p-4 md:p-6"
             style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-            <p className="text-3xl font-bold mb-1" style={{ color: stat.color }}>
+            <p className="text-2xl md:text-3xl font-bold mb-1" style={{ color: stat.color }}>
               {stat.value}
             </p>
-            <p className="text-sm" style={{ color: '#8a93a2' }}>{stat.label}</p>
+            <p className="text-xs md:text-sm" style={{ color: '#8a93a2' }}>{stat.label}</p>
           </div>
         ))}
       </div>
 
-      <div className="flex gap-6">
+      <div className="flex flex-col lg:flex-row gap-4 md:gap-6">
 
         {/* Liste */}
-        <div className="flex-1">
+        <div className={`flex-1 ${selectedUser ? 'hidden lg:block' : ''}`}>
           <div className="mb-4">
             <input
               type="text"
@@ -86,26 +86,26 @@ export default function Users() {
             {filteredUsers.map(user => (
               <div key={user.id}
                 onClick={() => setSelectedUser(user)}
-                className="bg-white rounded-2xl px-5 py-4 flex items-center justify-between cursor-pointer"
+                className="bg-white rounded-2xl px-4 md:px-5 py-3 md:py-4 flex items-center justify-between cursor-pointer"
                 style={{
                   boxShadow: selectedUser?.id === user.id
                     ? '0 0 0 2px #2BBFB3'
                     : '0 2px 8px rgba(0,0,0,0.04)'
                 }}>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold"
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold flex-shrink-0"
                     style={{ backgroundColor: '#2BBFB3' }}>
                     {user.firstName?.[0] || user.email?.[0] || '?'}
                   </div>
-                  <div>
-                    <p className="font-semibold text-sm" style={{ color: '#1a2b4a' }}>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-sm truncate" style={{ color: '#1a2b4a' }}>
                       {user.firstName} {user.lastName}
                     </p>
-                    <p className="text-xs" style={{ color: '#8a93a2' }}>{user.email}</p>
+                    <p className="text-xs truncate" style={{ color: '#8a93a2' }}>{user.email}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs px-2 py-1 rounded-lg"
+                <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                  <span className="text-xs px-2 py-1 rounded-lg hidden sm:inline-block"
                     style={{ backgroundColor: '#e8f8f7', color: '#2BBFB3' }}>
                     {new Date(user.created_at).toLocaleDateString('fr-FR')}
                   </span>
@@ -121,10 +121,18 @@ export default function Users() {
         </div>
 
         {/* Fiche utilisateur */}
-        <div className="w-80 flex-shrink-0">
+        <div className="w-full lg:w-80 lg:flex-shrink-0">
           {selectedUser ? (
-            <div className="bg-white rounded-3xl p-6 sticky top-4"
+            <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6 lg:sticky lg:top-4"
               style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
+
+              {/* Bouton retour mobile */}
+              <button
+                onClick={() => setSelectedUser(null)}
+                className="lg:hidden flex items-center gap-2 mb-4 text-sm font-medium"
+                style={{ color: '#8a93a2' }}>
+                ← Retour à la liste
+              </button>
 
               <div className="text-center mb-6">
                 <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-white text-xl font-bold mx-auto mb-3"
@@ -134,7 +142,7 @@ export default function Users() {
                 <h2 className="font-bold" style={{ color: '#1a2b4a' }}>
                   {selectedUser.firstName} {selectedUser.lastName}
                 </h2>
-                <p className="text-sm" style={{ color: '#8a93a2' }}>{selectedUser.email}</p>
+                <p className="text-sm break-all" style={{ color: '#8a93a2' }}>{selectedUser.email}</p>
               </div>
 
               <div className="flex flex-col gap-3">
@@ -156,7 +164,7 @@ export default function Users() {
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-3xl p-8 text-center"
+            <div className="bg-white rounded-3xl p-8 text-center hidden lg:block"
               style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
               <span className="text-3xl">👤</span>
               <p className="font-semibold mt-3" style={{ color: '#1a2b4a' }}>

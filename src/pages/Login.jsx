@@ -26,13 +26,13 @@ export default function Login() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen p-6"
+    <div className="flex items-center justify-center min-h-screen p-4 md:p-6"
       style={{ background: 'linear-gradient(160deg, #e8f8f7 0%, #f4f5f7 60%)' }}>
       <div className="w-full max-w-md">
 
-        <div className="text-center mb-8">
-          <img src="/logo.png" alt="Héka" className="h-14 mx-auto mb-4 rounded-2xl" />
-          <h1 className="text-xl font-bold" style={{ color: '#1a2b4a' }}>
+        <div className="text-center mb-6 md:mb-8">
+          <img src="/logo.png" alt="Héka" className="h-12 md:h-14 mx-auto mb-4 rounded-2xl" />
+          <h1 className="text-lg md:text-xl font-bold" style={{ color: '#1a2b4a' }}>
             Espace de gestion
           </h1>
           <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>
@@ -59,7 +59,7 @@ export default function Login() {
           </button>
         </div>
 
-        <div className="bg-white rounded-3xl p-8"
+        <div className="bg-white rounded-3xl p-6 md:p-8"
           style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.08)' }}>
           <form onSubmit={handleSubmit}>
 

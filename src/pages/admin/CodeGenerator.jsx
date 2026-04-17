@@ -64,7 +64,6 @@ export default function CodeGenerator() {
     setLoading(true)
 
     try {
-      // 1. Vérifier le mot de passe via Directus
       const authResponse = await fetch(`${DIRECTUS_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -82,12 +81,10 @@ export default function CodeGenerator() {
       const partner = partners.find(p => p.id === selectedPartner)
       const generatedCodes = []
 
-      // 2. Générer les codes
       for (let i = 0; i < quantity; i++) {
         generatedCodes.push(generateCode())
       }
 
-      // 3. Sauvegarder dans Directus
       await Promise.all(generatedCodes.map(code =>
         client.request(createItem('access_codes', {
           code,
@@ -99,9 +96,8 @@ export default function CodeGenerator() {
         }))
       ))
 
-      // 4. Envoyer à Xano
       await Promise.all(generatedCodes.map(code =>
-        fetch(`${XANO_BASE}/plan-activation-code`, {
+        fetch(`${XANO_BASE}/plan-activation-codes`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -111,7 +107,6 @@ export default function CodeGenerator() {
         })
       ))
 
-      // 5. Mettre à jour les stats
       setStats(prev => ({
         total: prev.total + quantity,
         used: prev.used,
@@ -133,34 +128,34 @@ export default function CodeGenerator() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold" style={{ color: '#1a2b4a' }}>Générateur de codes</h1>
+      <div className="mb-6 md:mb-8">
+        <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Générateur de codes</h1>
         <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>
           Créez et assignez des codes d'accès Héka
         </p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-3 gap-3 md:gap-4 mb-6 md:mb-8">
         {[
           { label: 'Total codes créés', value: stats.total, color: '#2BBFB3' },
           { label: 'Codes utilisés', value: stats.used, color: '#ef4444' },
           { label: 'Codes disponibles', value: stats.unused, color: '#1a2b4a' },
         ].map(stat => (
-          <div key={stat.label} className="bg-white rounded-3xl p-6"
+          <div key={stat.label} className="bg-white rounded-2xl md:rounded-3xl p-4 md:p-6"
             style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-            <p className="text-3xl font-bold mb-1" style={{ color: stat.color }}>
+            <p className="text-xl md:text-3xl font-bold mb-1" style={{ color: stat.color }}>
               {stat.value}
             </p>
-            <p className="text-sm" style={{ color: '#8a93a2' }}>{stat.label}</p>
+            <p className="text-xs md:text-sm" style={{ color: '#8a93a2' }}>{stat.label}</p>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
 
         {/* Formulaire */}
-        <div className="bg-white rounded-3xl p-8"
+        <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-8"
           style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
 
           <h2 className="font-bold text-lg mb-6" style={{ color: '#1a2b4a' }}>
@@ -205,23 +200,25 @@ export default function CodeGenerator() {
               <label className="block text-sm font-semibold mb-2" style={{ color: '#1a2b4a' }}>
                 Quantité de codes
               </label>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <input type="number" min="1" max="500"
                   value={quantity}
                   onChange={e => setQuantity(parseInt(e.target.value) || 1)}
-                  className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none"
+                  className="flex-1 min-w-0 px-4 py-3 rounded-2xl text-sm outline-none"
                   style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }} />
-                {[10, 25, 50, 100].map(n => (
-                  <button key={n} type="button"
-                    onClick={() => setQuantity(n)}
-                    className="px-3 py-2 rounded-xl text-sm font-medium transition-all"
-                    style={{
-                      backgroundColor: quantity === n ? '#2BBFB3' : '#f4f5f7',
-                      color: quantity === n ? 'white' : '#8a93a2'
-                    }}>
-                    {n}
-                  </button>
-                ))}
+                <div className="flex gap-2">
+                  {[10, 25, 50, 100].map(n => (
+                    <button key={n} type="button"
+                      onClick={() => setQuantity(n)}
+                      className="px-3 py-2 rounded-xl text-sm font-medium transition-all"
+                      style={{
+                        backgroundColor: quantity === n ? '#2BBFB3' : '#f4f5f7',
+                        color: quantity === n ? 'white' : '#8a93a2'
+                      }}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -249,14 +246,14 @@ export default function CodeGenerator() {
         <div className="flex flex-col gap-4">
 
           {/* Aperçu format */}
-          <div className="bg-white rounded-3xl p-6"
+          <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6"
             style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
             <p className="text-sm font-semibold mb-4" style={{ color: '#1a2b4a' }}>
               Aperçu du format
             </p>
             <div className="rounded-2xl p-6 text-center"
               style={{ backgroundColor: '#f4f5f7' }}>
-              <p className="text-3xl font-bold mb-2 transition-all"
+              <p className="text-2xl md:text-3xl font-bold mb-2 transition-all"
                 style={{ color: '#2BBFB3', fontFamily: 'monospace', letterSpacing: '4px' }}>
                 {previewCode}
               </p>
@@ -267,7 +264,7 @@ export default function CodeGenerator() {
           </div>
 
           {/* Flux */}
-          <div className="bg-white rounded-3xl p-6"
+          <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6"
             style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
             <p className="text-sm font-semibold mb-4" style={{ color: '#1a2b4a' }}>
               Flux de génération

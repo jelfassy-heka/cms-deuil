@@ -82,32 +82,33 @@ export default function CRM() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold" style={{ color: '#1a2b4a' }}>CRM</h1>
+      <div className="mb-6 md:mb-8">
+        <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>CRM</h1>
         <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>
           Suivi et gestion de la relation partenaires
         </p>
       </div>
 
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
         {[
           { label: 'Total partenaires', value: stats.total, color: '#1a2b4a' },
           { label: 'À contacter', value: stats.aContacter, color: '#d97706' },
           { label: 'À relancer', value: stats.aRelancer, color: '#ef4444' },
           { label: 'Clients actifs', value: stats.actifs, color: '#2BBFB3' },
         ].map(stat => (
-          <div key={stat.label} className="bg-white rounded-3xl p-6"
+          <div key={stat.label} className="bg-white rounded-2xl md:rounded-3xl p-4 md:p-6"
             style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-            <p className="text-3xl font-bold mb-1" style={{ color: stat.color }}>
+            <p className="text-2xl md:text-3xl font-bold mb-1" style={{ color: stat.color }}>
               {stat.value}
             </p>
-            <p className="text-sm" style={{ color: '#8a93a2' }}>{stat.label}</p>
+            <p className="text-xs md:text-sm" style={{ color: '#8a93a2' }}>{stat.label}</p>
           </div>
         ))}
       </div>
 
-      <div className="flex gap-6">
-        <div className="w-96 flex-shrink-0">
+      <div className="flex flex-col lg:flex-row gap-4 md:gap-6">
+        {/* Liste partenaires — pleine largeur mobile, fixe desktop */}
+        <div className={`${selectedPartner ? 'hidden lg:block' : ''} w-full lg:w-96 lg:flex-shrink-0`}>
           <div className="flex gap-2 mb-4 flex-wrap">
             {['tous', 'à contacter', 'à relancer', 'en cours', 'client actif'].map(status => (
               <button key={status}
@@ -134,11 +135,11 @@ export default function CRM() {
                 }}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold"
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
                       style={{ backgroundColor: '#2BBFB3' }}>
                       {partner.name[0]}
                     </div>
-                    <p className="font-semibold text-sm" style={{ color: '#1a2b4a' }}>
+                    <p className="font-semibold text-sm truncate" style={{ color: '#1a2b4a' }}>
                       {partner.name}
                     </p>
                   </div>
@@ -165,27 +166,36 @@ export default function CRM() {
           </div>
         </div>
 
+        {/* Fiche partenaire */}
         <div className="flex-1">
           {selectedPartner ? (
-            <div className="bg-white rounded-3xl p-8"
+            <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-8"
               style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
 
-              <div className="flex items-start justify-between mb-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold"
+              {/* Bouton retour mobile */}
+              <button
+                onClick={() => setSelectedPartner(null)}
+                className="lg:hidden flex items-center gap-2 mb-4 text-sm font-medium"
+                style={{ color: '#8a93a2' }}>
+                ← Retour à la liste
+              </button>
+
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-6 gap-3">
+                <div className="flex items-center gap-3 md:gap-4">
+                  <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center text-white text-lg md:text-xl font-bold flex-shrink-0"
                     style={{ backgroundColor: '#2BBFB3' }}>
                     {selectedPartner.name[0]}
                   </div>
-                  <div>
-                    <h2 className="text-xl font-bold" style={{ color: '#1a2b4a' }}>
+                  <div className="min-w-0">
+                    <h2 className="text-lg md:text-xl font-bold truncate" style={{ color: '#1a2b4a' }}>
                       {selectedPartner.name}
                     </h2>
-                    <p className="text-sm" style={{ color: '#8a93a2' }}>
+                    <p className="text-sm truncate" style={{ color: '#8a93a2' }}>
                       {selectedPartner.email_contact} · {selectedPartner.phone}
                     </p>
                   </div>
                 </div>
-                <span className="text-sm px-3 py-1.5 rounded-xl font-medium"
+                <span className="text-sm px-3 py-1.5 rounded-xl font-medium w-fit"
                   style={{
                     backgroundColor: statusColors[selectedPartner.crm_status]?.bg || '#f4f5f7',
                     color: statusColors[selectedPartner.crm_status]?.text || '#8a93a2'
@@ -221,7 +231,7 @@ export default function CRM() {
                 <form onSubmit={handleAddActivity}
                   className="rounded-2xl p-4 mb-4"
                   style={{ backgroundColor: '#f4f5f7' }}>
-                  <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                     <div>
                       <label className="block text-xs font-semibold mb-1" style={{ color: '#1a2b4a' }}>
                         Type
@@ -294,7 +304,7 @@ export default function CRM() {
                 <div className="flex flex-col gap-2">
                   {partnerActivities.map(activity => (
                     <div key={activity.id}
-                      className="rounded-2xl p-4"
+                      className="rounded-2xl p-3 md:p-4"
                       style={{ backgroundColor: '#f4f5f7' }}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-lg"
@@ -321,7 +331,7 @@ export default function CRM() {
               )}
             </div>
           ) : (
-            <div className="bg-white rounded-3xl p-12 text-center"
+            <div className="bg-white rounded-3xl p-12 text-center hidden lg:block"
               style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)', minHeight: '400px' }}>
               <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 mt-16"
                 style={{ backgroundColor: '#e8f8f7' }}>

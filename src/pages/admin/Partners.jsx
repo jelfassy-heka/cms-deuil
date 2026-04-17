@@ -75,37 +75,38 @@ function PartnerModal({ partner, onClose, onUpdate }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4"
       style={{ backgroundColor: 'rgba(26,43,74,0.5)' }}
       onClick={e => e.target === e.currentTarget && onClose()}>
 
-      <div className="bg-white rounded-3xl w-full max-w-3xl max-h-screen overflow-y-auto"
+      <div className="bg-white w-full h-full md:h-auto md:rounded-3xl md:w-full md:max-w-3xl md:max-h-[90vh] overflow-y-auto"
         style={{ boxShadow: '0 20px 60px rgba(43,191,179,0.15)' }}>
 
         {/* Header */}
-        <div className="flex items-start justify-between p-8 pb-6 border-b"
+        <div className="flex items-start justify-between p-4 md:p-8 pb-4 md:pb-6 border-b sticky top-0 bg-white z-10"
           style={{ borderColor: '#f4f5f7' }}>
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-white text-2xl font-bold"
+          <div className="flex items-center gap-3 md:gap-4 flex-1 min-w-0">
+            <div className="w-12 h-12 md:w-16 md:h-16 rounded-2xl flex items-center justify-center text-white text-lg md:text-2xl font-bold flex-shrink-0"
               style={{ backgroundColor: '#2BBFB3' }}>
               {partner.name?.[0]}
             </div>
-            <div>
+            <div className="min-w-0 flex-1">
               {editing ? (
                 <input value={form.name}
                   onChange={e => setForm({ ...form, name: e.target.value })}
-                  className="text-xl font-bold px-3 py-1 rounded-xl outline-none"
+                  className="text-lg md:text-xl font-bold px-3 py-1 rounded-xl outline-none w-full"
                   style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }} />
               ) : (
-<h2 className="text-xl font-bold" style={{ color: '#1a2b4a' }}>
-  {[partner.contact_firstname, partner.contact_lastname].filter(Boolean).join(' ') || partner.name}
-  {partner.contact_firstname && (
-    <span className="text-base font-normal ml-2" style={{ color: '#8a93a2' }}>
-      — {partner.name}
-    </span>
-  )}
-</h2>              )}
-              <div className="flex items-center gap-2 mt-1">
+                <h2 className="text-lg md:text-xl font-bold truncate" style={{ color: '#1a2b4a' }}>
+                  {[partner.contact_firstname, partner.contact_lastname].filter(Boolean).join(' ') || partner.name}
+                  {partner.contact_firstname && (
+                    <span className="text-sm md:text-base font-normal ml-2 hidden sm:inline" style={{ color: '#8a93a2' }}>
+                      — {partner.name}
+                    </span>
+                  )}
+                </h2>
+              )}
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <span className="text-xs px-2 py-1 rounded-lg"
                   style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>
                   {partner.partner_type || 'entreprise'}
@@ -117,31 +118,31 @@ function PartnerModal({ partner, onClose, onUpdate }) {
                   }}>
                   {partner.crm_status || 'prospect'}
                 </span>
-                <span className="text-xs" style={{ color: '#8a93a2' }}>
+                <span className="text-xs hidden sm:inline" style={{ color: '#8a93a2' }}>
                   Créé le {new Date(partner.date_created).toLocaleDateString('fr-FR')}
                 </span>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
             {editing ? (
               <>
                 <button onClick={handleSave}
-                  className="px-4 py-2 rounded-xl text-white text-sm font-medium"
+                  className="px-3 md:px-4 py-2 rounded-xl text-white text-sm font-medium"
                   style={{ backgroundColor: '#2BBFB3' }}>
                   Sauvegarder
                 </button>
                 <button onClick={() => { setEditing(false); setForm({ ...partner }) }}
-                  className="px-4 py-2 rounded-xl text-sm font-medium"
+                  className="px-3 md:px-4 py-2 rounded-xl text-sm font-medium hidden sm:block"
                   style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>
                   Annuler
                 </button>
               </>
             ) : (
               <button onClick={() => setEditing(true)}
-                className="px-4 py-2 rounded-xl text-sm font-medium"
+                className="px-3 md:px-4 py-2 rounded-xl text-sm font-medium"
                 style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }}>
-                ✏️ Modifier
+                ✏️ <span className="hidden sm:inline">Modifier</span>
               </button>
             )}
             <button onClick={onClose}
@@ -152,12 +153,12 @@ function PartnerModal({ partner, onClose, onUpdate }) {
           </div>
         </div>
 
-        <div className="p-8">
-          <div className="grid grid-cols-2 gap-6 mb-8">
+        <div className="p-4 md:p-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
 
             {/* Contact */}
-            <div className="rounded-2xl p-5" style={{ backgroundColor: '#f4f5f7' }}>
-              <p className="text-xs font-semibold mb-4" style={{ color: '#8a93a2' }}>
+            <div className="rounded-2xl p-4 md:p-5" style={{ backgroundColor: '#f4f5f7' }}>
+              <p className="text-xs font-semibold mb-3 md:mb-4" style={{ color: '#8a93a2' }}>
                 CONTACT PRINCIPAL
               </p>
               {editing ? (
@@ -196,8 +197,8 @@ function PartnerModal({ partner, onClose, onUpdate }) {
             </div>
 
             {/* Statut CRM */}
-            <div className="rounded-2xl p-5" style={{ backgroundColor: '#f4f5f7' }}>
-              <p className="text-xs font-semibold mb-4" style={{ color: '#8a93a2' }}>
+            <div className="rounded-2xl p-4 md:p-5" style={{ backgroundColor: '#f4f5f7' }}>
+              <p className="text-xs font-semibold mb-3 md:mb-4" style={{ color: '#8a93a2' }}>
                 STATUT & TYPE
               </p>
               {editing ? (
@@ -238,7 +239,7 @@ function PartnerModal({ partner, onClose, onUpdate }) {
           </div>
 
           {/* Notes internes */}
-          <div className="mb-8">
+          <div className="mb-6 md:mb-8">
             <p className="text-xs font-semibold mb-3" style={{ color: '#8a93a2' }}>
               NOTES INTERNES
             </p>
@@ -275,7 +276,7 @@ function PartnerModal({ partner, onClose, onUpdate }) {
               <form onSubmit={handleAddActivity}
                 className="rounded-2xl p-4 mb-4"
                 style={{ backgroundColor: '#f4f5f7' }}>
-                <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                   <select value={activityForm.activity_type}
                     onChange={e => setActivityForm({ ...activityForm, activity_type: e.target.value })}
                     className="px-3 py-2 rounded-xl text-sm outline-none bg-white">
@@ -316,9 +317,9 @@ function PartnerModal({ partner, onClose, onUpdate }) {
                 </p>
               ) : (
                 activities.map(activity => (
-                  <div key={activity.id} className="rounded-2xl p-4 flex items-start gap-3"
+                  <div key={activity.id} className="rounded-2xl p-3 md:p-4 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3"
                     style={{ backgroundColor: '#f4f5f7' }}>
-                    <span className="text-xs px-2 py-1 rounded-lg font-medium mt-0.5"
+                    <span className="text-xs px-2 py-1 rounded-lg font-medium w-fit"
                       style={{ backgroundColor: '#e8f8f7', color: '#2BBFB3' }}>
                       {activity.activity_type}
                     </span>
@@ -326,7 +327,7 @@ function PartnerModal({ partner, onClose, onUpdate }) {
                       {activity.note && (
                         <p className="text-sm mb-1" style={{ color: '#1a2b4a' }}>{activity.note}</p>
                       )}
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 flex-wrap">
                         <span className="text-xs" style={{ color: '#8a93a2' }}>
                           {new Date(activity.last_contact_at).toLocaleDateString('fr-FR')}
                         </span>
@@ -424,15 +425,15 @@ export default function Partners() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 md:mb-8 gap-3">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color: '#1a2b4a' }}>Partenaires</h1>
+          <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Partenaires</h1>
           <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>
             {partners.length} partenaire{partners.length > 1 ? 's' : ''}
           </p>
         </div>
         <button onClick={() => setShowForm(!showForm)}
-          className="px-5 py-3 rounded-2xl text-white text-sm font-semibold"
+          className="px-5 py-3 rounded-2xl text-white text-sm font-semibold w-full sm:w-auto"
           style={{ backgroundColor: '#2BBFB3' }}>
           + Ajouter un partenaire
         </button>
@@ -440,13 +441,13 @@ export default function Partners() {
 
       {/* Formulaire */}
       {showForm && (
-        <div className="bg-white rounded-3xl p-8 mb-6"
+        <div className="bg-white rounded-3xl p-5 md:p-8 mb-6"
           style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.08)' }}>
           <h2 className="font-bold text-lg mb-6" style={{ color: '#1a2b4a' }}>
             Nouveau partenaire
           </h2>
           <form onSubmit={handleSubmit}>
-            <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
               {[
                 { name: 'name', placeholder: "Nom de l'organisation *", required: true },
                 { name: 'contact_firstname', placeholder: 'Prénom contact' },
@@ -491,7 +492,7 @@ export default function Partners() {
                 className="w-full px-4 py-3 rounded-2xl text-sm outline-none resize-none"
                 style={{ backgroundColor: '#f4f5f7' }} />
             </div>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button type="submit"
                 className="px-6 py-3 rounded-2xl text-white text-sm font-semibold"
                 style={{ backgroundColor: '#2BBFB3' }}>
@@ -522,25 +523,25 @@ export default function Partners() {
           {partners.map(partner => (
             <div key={partner.id}
               onClick={() => setSelectedPartner(partner)}
-              className="bg-white rounded-3xl px-6 py-5 flex items-center justify-between cursor-pointer transition-all hover:shadow-md"
+              className="bg-white rounded-2xl md:rounded-3xl px-4 md:px-6 py-4 md:py-5 flex flex-col sm:flex-row sm:items-center justify-between cursor-pointer transition-all hover:shadow-md gap-3"
               style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-white text-lg"
+              <div className="flex items-center gap-3 md:gap-4">
+                <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center font-bold text-white text-base md:text-lg flex-shrink-0"
                   style={{ backgroundColor: '#2BBFB3' }}>
                   {partner.name?.[0]}
                 </div>
-                <div>
-                  <p className="font-semibold" style={{ color: '#1a2b4a' }}>{partner.name}</p>
-                  <p className="text-sm" style={{ color: '#8a93a2' }}>
+                <div className="min-w-0">
+                  <p className="font-semibold truncate" style={{ color: '#1a2b4a' }}>{partner.name}</p>
+                  <p className="text-sm truncate" style={{ color: '#8a93a2' }}>
                     {partner.contact_firstname} {partner.contact_lastname}
                     {partner.contact_role ? ` · ${partner.contact_role}` : ''}
                   </p>
-                  <p className="text-xs mt-0.5" style={{ color: '#8a93a2' }}>
+                  <p className="text-xs mt-0.5 truncate" style={{ color: '#8a93a2' }}>
                     {partner.email_contact}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 ml-13 sm:ml-0 flex-wrap">
                 <span className="text-xs px-3 py-1 rounded-full font-medium"
                   style={{
                     backgroundColor: (statusColors[partner.crm_status]?.bg) || '#f4f5f7',
@@ -552,7 +553,7 @@ export default function Partners() {
                   style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>
                   {partner.partner_type || 'entreprise'}
                 </span>
-                <span className="text-xs" style={{ color: '#8a93a2' }}>→</span>
+                <span className="text-xs hidden sm:inline" style={{ color: '#8a93a2' }}>→</span>
               </div>
             </div>
           ))}

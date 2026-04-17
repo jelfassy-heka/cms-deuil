@@ -57,12 +57,12 @@ function RequestForm({ type, onSubmit, onCancel }) {
   }
 
   return (
-    <div className="bg-white rounded-3xl p-8 mb-6"
+    <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-8 mb-6"
       style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.08)' }}>
       <div className="flex items-center gap-3 mb-6">
         <span className="text-2xl">{type.icon}</span>
         <div>
-          <h2 className="font-bold text-lg" style={{ color: '#1a2b4a' }}>{type.label}</h2>
+          <h2 className="font-bold text-base md:text-lg" style={{ color: '#1a2b4a' }}>{type.label}</h2>
           <p className="text-sm" style={{ color: '#8a93a2' }}>{type.description}</p>
         </div>
       </div>
@@ -219,7 +219,7 @@ function RequestForm({ type, onSubmit, onCancel }) {
           </>
         )}
 
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <button type="submit"
             className="px-6 py-3 rounded-2xl text-white text-sm font-semibold"
             style={{ backgroundColor: type.color }}>
@@ -252,6 +252,17 @@ export default function PartnerDashboard() {
   const [loading, setLoading] = useState(true)
   const [activePage, setActivePage] = useState('dashboard')
   const [activeRequestType, setActiveRequestType] = useState(null)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   useEffect(() => {
     if (!user) { navigate('/login'); return }
@@ -286,6 +297,12 @@ export default function PartnerDashboard() {
     navigate('/login')
   }
 
+  const handleNavClick = (path) => {
+    setActivePage(path)
+    setActiveRequestType(null)
+    if (isMobile) setMobileMenuOpen(false)
+  }
+
   const handleRequest = async (formData) => {
     try {
       const newRequest = await client.request(createItem('code_request', {
@@ -310,6 +327,14 @@ export default function PartnerDashboard() {
   const unusedCodes = codes.filter(c => (c.current_uses || 0) === 0).length
   const usageRate = totalCodes > 0 ? Math.round((usedCodes / totalCodes) * 100) : 0
 
+  const navItems = [
+    { label: 'Tableau de bord', icon: '⊞', path: 'dashboard' },
+    { label: 'Mes codes', icon: '🔑', path: 'codes' },
+    { label: 'Mon contrat', icon: '📄', path: 'contract' },
+    { label: 'Mes demandes', icon: '📋', path: 'requests' },
+    { label: 'Nouvelle demande', icon: '✉️', path: 'new_request' },
+  ]
+
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen">
       <p style={{ color: '#8a93a2' }}>Chargement...</p>
@@ -319,24 +344,67 @@ export default function PartnerDashboard() {
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: '#f4f5f7' }}>
 
+      {/* Overlay mobile */}
+      {isMobile && mobileMenuOpen && (
+        <div className="fixed inset-0 z-40"
+          style={{ backgroundColor: 'rgba(26,43,74,0.5)' }}
+          onClick={() => setMobileMenuOpen(false)} />
+      )}
+
+      {/* Header mobile */}
+      {isMobile && (
+        <div className="fixed top-0 left-0 right-0 z-30 bg-white flex items-center justify-between px-4 py-3"
+          style={{ boxShadow: '0 2px 12px rgba(43,191,179,0.08)' }}>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ backgroundColor: '#f4f5f7' }}>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                {mobileMenuOpen ? (
+                  <path d="M5 5L15 15M15 5L5 15" stroke="#2BBFB3" strokeWidth="1.5" strokeLinecap="round"/>
+                ) : (
+                  <path d="M3 5h14M3 10h14M3 15h14" stroke="#2BBFB3" strokeWidth="1.5" strokeLinecap="round"/>
+                )}
+              </svg>
+            </button>
+            <img src="/logo.png" alt="Héka" className="h-8 rounded-lg" />
+          </div>
+          <p className="text-sm font-semibold" style={{ color: '#1a2b4a' }}>
+            {navItems.find(n => n.path === activePage)?.label || 'Tableau de bord'}
+          </p>
+        </div>
+      )}
+
       {/* Sidebar */}
-      <div className="w-64 bg-white flex flex-col py-8 px-4"
-        style={{ boxShadow: '2px 0 12px rgba(43,191,179,0.06)' }}>
+      <div className={`bg-white flex flex-col py-8 px-4 transition-all duration-300 ${
+        isMobile
+          ? `fixed top-0 left-0 bottom-0 z-50 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`
+          : 'relative'
+      }`}
+        style={{
+          width: isMobile ? '280px' : '256px',
+          boxShadow: '2px 0 12px rgba(43,191,179,0.06)',
+        }}>
         <div className="px-4 mb-10">
-          <img src="/logo.png" alt="Héka" className="h-10 rounded-xl" />
+          <div className="flex items-center justify-between">
+            <img src="/logo.png" alt="Héka" className="h-10 rounded-xl" />
+            {isMobile && (
+              <button onClick={() => setMobileMenuOpen(false)}
+                className="w-8 h-8 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: '#f4f5f7' }}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M3 3L11 11M11 3L3 11" stroke="#8a93a2" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </button>
+            )}
+          </div>
           <p className="text-xs mt-2" style={{ color: '#8a93a2' }}>Espace partenaire</p>
         </div>
 
         <nav className="flex-1">
-          {[
-            { label: 'Tableau de bord', icon: '⊞', path: 'dashboard' },
-            { label: 'Mes codes', icon: '🔑', path: 'codes' },
-            { label: 'Mon contrat', icon: '📄', path: 'contract' },
-            { label: 'Mes demandes', icon: '📋', path: 'requests' },
-            { label: 'Nouvelle demande', icon: '✉️', path: 'new_request' },
-          ].map(item => (
+          {navItems.map(item => (
             <button key={item.path}
-              onClick={() => { setActivePage(item.path); setActiveRequestType(null) }}
+              onClick={() => handleNavClick(item.path)}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl mb-1 text-sm font-medium transition-all"
               style={{
                 backgroundColor: activePage === item.path ? '#e8f8f7' : 'transparent',
@@ -356,13 +424,14 @@ export default function PartnerDashboard() {
       </div>
 
       {/* Contenu */}
-      <div className="flex-1 p-8">
+      <div className="flex-1 p-4 md:p-8 overflow-x-hidden"
+        style={{ paddingTop: isMobile ? '72px' : undefined }}>
 
         {/* Dashboard */}
         {activePage === 'dashboard' && (
           <div>
-            <div className="mb-8">
-              <h1 className="text-2xl font-bold" style={{ color: '#1a2b4a' }}>
+            <div className="mb-6 md:mb-8">
+              <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>
                 Tableau de bord
               </h1>
               <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>
@@ -370,20 +439,20 @@ export default function PartnerDashboard() {
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-4 mb-8">
-              <div className="bg-white rounded-3xl p-6"
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6 md:mb-8">
+              <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6"
                 style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                <p className="text-3xl font-bold mb-1" style={{ color: '#2BBFB3' }}>{unusedCodes}</p>
+                <p className="text-2xl md:text-3xl font-bold mb-1" style={{ color: '#2BBFB3' }}>{unusedCodes}</p>
                 <p className="text-sm" style={{ color: '#8a93a2' }}>Codes disponibles</p>
               </div>
-              <div className="bg-white rounded-3xl p-6"
+              <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6"
                 style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                <p className="text-3xl font-bold mb-1" style={{ color: '#1a2b4a' }}>{usedCodes}</p>
+                <p className="text-2xl md:text-3xl font-bold mb-1" style={{ color: '#1a2b4a' }}>{usedCodes}</p>
                 <p className="text-sm" style={{ color: '#8a93a2' }}>Codes utilisés</p>
               </div>
-              <div className="bg-white rounded-3xl p-6"
+              <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6"
                 style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                <p className="text-3xl font-bold mb-1"
+                <p className="text-2xl md:text-3xl font-bold mb-1"
                   style={{ color: usageRate > 80 ? '#ef4444' : '#2BBFB3' }}>
                   {usageRate}%
                 </p>
@@ -391,7 +460,7 @@ export default function PartnerDashboard() {
               </div>
             </div>
 
-            <div className="bg-white rounded-3xl p-6 mb-6"
+            <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6 mb-6"
               style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
               <div className="flex items-center justify-between mb-3">
                 <p className="font-semibold" style={{ color: '#1a2b4a' }}>Utilisation des codes</p>
@@ -414,11 +483,11 @@ export default function PartnerDashboard() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
               {requestTypes.slice(0, 4).map(type => (
                 <button key={type.type}
                   onClick={() => { setActivePage('new_request'); setActiveRequestType(type) }}
-                  className="bg-white rounded-3xl p-5 text-left transition-all hover:shadow-md"
+                  className="bg-white rounded-2xl md:rounded-3xl p-4 md:p-5 text-left transition-all hover:shadow-md"
                   style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
                   <span className="text-2xl">{type.icon}</span>
                   <p className="font-semibold mt-2 text-sm" style={{ color: '#1a2b4a' }}>
@@ -436,28 +505,28 @@ export default function PartnerDashboard() {
         {/* Mes codes */}
         {activePage === 'codes' && (
           <div>
-            <div className="mb-8">
-              <h1 className="text-2xl font-bold" style={{ color: '#1a2b4a' }}>Mes codes</h1>
+            <div className="mb-6 md:mb-8">
+              <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Mes codes</h1>
               <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>
                 Gérez vos codes d'accès Héka
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-4 mb-8">
-              <div className="bg-white rounded-3xl p-6"
+            <div className="grid grid-cols-3 gap-3 md:gap-4 mb-6 md:mb-8">
+              <div className="bg-white rounded-2xl md:rounded-3xl p-4 md:p-6"
                 style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                <p className="text-3xl font-bold mb-1" style={{ color: '#2BBFB3' }}>{unusedCodes}</p>
-                <p className="text-sm" style={{ color: '#8a93a2' }}>Disponibles</p>
+                <p className="text-xl md:text-3xl font-bold mb-1" style={{ color: '#2BBFB3' }}>{unusedCodes}</p>
+                <p className="text-xs md:text-sm" style={{ color: '#8a93a2' }}>Disponibles</p>
               </div>
-              <div className="bg-white rounded-3xl p-6"
+              <div className="bg-white rounded-2xl md:rounded-3xl p-4 md:p-6"
                 style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                <p className="text-3xl font-bold mb-1" style={{ color: '#1a2b4a' }}>{usedCodes}</p>
-                <p className="text-sm" style={{ color: '#8a93a2' }}>Utilisés</p>
+                <p className="text-xl md:text-3xl font-bold mb-1" style={{ color: '#1a2b4a' }}>{usedCodes}</p>
+                <p className="text-xs md:text-sm" style={{ color: '#8a93a2' }}>Utilisés</p>
               </div>
-              <div className="bg-white rounded-3xl p-6"
+              <div className="bg-white rounded-2xl md:rounded-3xl p-4 md:p-6"
                 style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                <p className="text-3xl font-bold mb-1" style={{ color: '#8a93a2' }}>{totalCodes}</p>
-                <p className="text-sm" style={{ color: '#8a93a2' }}>Total</p>
+                <p className="text-xl md:text-3xl font-bold mb-1" style={{ color: '#8a93a2' }}>{totalCodes}</p>
+                <p className="text-xs md:text-sm" style={{ color: '#8a93a2' }}>Total</p>
               </div>
             </div>
 
@@ -470,20 +539,20 @@ export default function PartnerDashboard() {
                 </p>
               </div>
             ) : (
-              <div className="bg-white rounded-3xl overflow-hidden"
+              <div className="bg-white rounded-2xl md:rounded-3xl overflow-hidden"
                 style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                <div className="grid grid-cols-2 px-6 py-3 text-xs font-semibold"
+                <div className="grid grid-cols-2 px-4 md:px-6 py-3 text-xs font-semibold"
                   style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>
                   <span>CODE</span>
                   <span>STATUT</span>
                 </div>
                 {codes.map((code, index) => (
                   <div key={code.id}
-                    className="grid grid-cols-2 px-6 py-4 items-center"
+                    className="grid grid-cols-2 px-4 md:px-6 py-3 md:py-4 items-center"
                     style={{ borderTop: index > 0 ? '0.5px solid #f4f5f7' : 'none' }}>
                     <span style={{
                       fontFamily: 'monospace',
-                      fontSize: '15px',
+                      fontSize: '13px',
                       fontWeight: '600',
                       color: (code.current_uses || 0) > 0 ? '#8a93a2' : '#2BBFB3',
                       letterSpacing: '2px',
@@ -508,13 +577,13 @@ export default function PartnerDashboard() {
         {/* Mon contrat */}
         {activePage === 'contract' && (
           <div>
-            <div className="mb-8">
-              <h1 className="text-2xl font-bold" style={{ color: '#1a2b4a' }}>Mon contrat</h1>
+            <div className="mb-6 md:mb-8">
+              <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Mon contrat</h1>
             </div>
             {contract ? (
-              <div className="bg-white rounded-3xl p-8"
+              <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-8"
                 style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
                   {[
                     { label: 'Statut', value: contract.contract_status },
                     { label: 'Début', value: new Date(contract.start_date).toLocaleDateString('fr-FR') },
@@ -531,19 +600,21 @@ export default function PartnerDashboard() {
                     </div>
                   ))}
                 </div>
-                {contract.document_url && (
-                  <a href={contract.document_url} target="_blank" rel="noreferrer"
-                    className="inline-flex items-center gap-2 mt-6 px-5 py-3 rounded-2xl text-white text-sm font-semibold"
-                    style={{ backgroundColor: '#2BBFB3' }}>
-                    📄 Télécharger le contrat
-                  </a>
-                )}
-                <button
-                  onClick={() => { setActivePage('new_request'); setActiveRequestType(requestTypes[4]) }}
-                  className="mt-4 ml-3 inline-flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-semibold"
-                  style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }}>
-                  🔄 Demander un renouvellement
-                </button>
+                <div className="flex flex-col sm:flex-row gap-3 mt-6">
+                  {contract.document_url && (
+                    <a href={contract.document_url} target="_blank" rel="noreferrer"
+                      className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-white text-sm font-semibold"
+                      style={{ backgroundColor: '#2BBFB3' }}>
+                      📄 Télécharger le contrat
+                    </a>
+                  )}
+                  <button
+                    onClick={() => { setActivePage('new_request'); setActiveRequestType(requestTypes[4]) }}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-sm font-semibold"
+                    style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }}>
+                    🔄 Demander un renouvellement
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="bg-white rounded-3xl p-12 text-center"
@@ -558,20 +629,20 @@ export default function PartnerDashboard() {
         {/* Nouvelle demande */}
         {activePage === 'new_request' && (
           <div>
-            <div className="mb-8">
-              <h1 className="text-2xl font-bold" style={{ color: '#1a2b4a' }}>Nouvelle demande</h1>
+            <div className="mb-6 md:mb-8">
+              <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Nouvelle demande</h1>
               <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>Choisissez le type de demande</p>
             </div>
 
             {!activeRequestType ? (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                 {requestTypes.map(type => (
                   <button key={type.type}
                     onClick={() => setActiveRequestType(type)}
-                    className="bg-white rounded-3xl p-6 text-left transition-all hover:shadow-md"
+                    className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6 text-left transition-all hover:shadow-md"
                     style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                    <div className="flex items-center gap-4 mb-3">
-                      <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl"
+                    <div className="flex items-center gap-3 md:gap-4 mb-3">
+                      <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center text-xl md:text-2xl flex-shrink-0"
                         style={{ backgroundColor: type.color + '20' }}>
                         {type.icon}
                       </div>
@@ -594,15 +665,15 @@ export default function PartnerDashboard() {
         {/* Mes demandes */}
         {activePage === 'requests' && (
           <div>
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 md:mb-8 gap-3">
               <div>
-                <h1 className="text-2xl font-bold" style={{ color: '#1a2b4a' }}>Mes demandes</h1>
+                <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Mes demandes</h1>
                 <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>
                   {requests.length} demande(s)
                 </p>
               </div>
               <button onClick={() => { setActivePage('new_request'); setActiveRequestType(null) }}
-                className="px-5 py-3 rounded-2xl text-white text-sm font-semibold"
+                className="px-5 py-3 rounded-2xl text-white text-sm font-semibold w-full sm:w-auto"
                 style={{ backgroundColor: '#2BBFB3' }}>
                 + Nouvelle demande
               </button>
@@ -620,19 +691,19 @@ export default function PartnerDashboard() {
                   const typeInfo = requestTypes.find(t => t.type === req.request_type) || requestTypes[0]
                   const statusInfo = statusLabels[req.request_status] || statusLabels.pending
                   return (
-                    <div key={req.id} className="bg-white rounded-3xl px-6 py-5"
+                    <div key={req.id} className="bg-white rounded-2xl md:rounded-3xl px-4 md:px-6 py-4 md:py-5"
                       style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 md:gap-4 min-w-0">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
                             style={{ backgroundColor: typeInfo.color + '20' }}>
                             {typeInfo.icon}
                           </div>
-                          <div>
-                            <p className="font-semibold" style={{ color: '#1a2b4a' }}>
+                          <div className="min-w-0">
+                            <p className="font-semibold truncate" style={{ color: '#1a2b4a' }}>
                               {typeInfo.label}
                             </p>
-                            <p className="text-sm mt-0.5" style={{ color: '#8a93a2' }}>
+                            <p className="text-sm mt-0.5 truncate" style={{ color: '#8a93a2' }}>
                               {req.reason || '—'}
                             </p>
                             <p className="text-xs mt-0.5" style={{ color: '#8a93a2' }}>
@@ -640,7 +711,7 @@ export default function PartnerDashboard() {
                             </p>
                           </div>
                         </div>
-                        <span className="text-xs px-3 py-1.5 rounded-xl font-medium"
+                        <span className="text-xs px-2 md:px-3 py-1 md:py-1.5 rounded-xl font-medium whitespace-nowrap flex-shrink-0"
                           style={{ backgroundColor: statusInfo.bg, color: statusInfo.text }}>
                           {statusInfo.label}
                         </span>
