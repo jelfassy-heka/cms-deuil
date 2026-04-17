@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import client from '../../lib/directus'
 import { readItems, createItem } from '@directus/sdk'
+import PartnerCodes from './PartnerCodes'
 
 const requestTypes = [
   {
@@ -503,76 +504,7 @@ export default function PartnerDashboard() {
         )}
 
         {/* Mes codes */}
-        {activePage === 'codes' && (
-          <div>
-            <div className="mb-6 md:mb-8">
-              <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Mes codes</h1>
-              <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>
-                Gérez vos codes d'accès Héka
-              </p>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 md:gap-4 mb-6 md:mb-8">
-              <div className="bg-white rounded-2xl md:rounded-3xl p-4 md:p-6"
-                style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                <p className="text-xl md:text-3xl font-bold mb-1" style={{ color: '#2BBFB3' }}>{unusedCodes}</p>
-                <p className="text-xs md:text-sm" style={{ color: '#8a93a2' }}>Disponibles</p>
-              </div>
-              <div className="bg-white rounded-2xl md:rounded-3xl p-4 md:p-6"
-                style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                <p className="text-xl md:text-3xl font-bold mb-1" style={{ color: '#1a2b4a' }}>{usedCodes}</p>
-                <p className="text-xs md:text-sm" style={{ color: '#8a93a2' }}>Utilisés</p>
-              </div>
-              <div className="bg-white rounded-2xl md:rounded-3xl p-4 md:p-6"
-                style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                <p className="text-xl md:text-3xl font-bold mb-1" style={{ color: '#8a93a2' }}>{totalCodes}</p>
-                <p className="text-xs md:text-sm" style={{ color: '#8a93a2' }}>Total</p>
-              </div>
-            </div>
-
-            {codes.length === 0 ? (
-              <div className="bg-white rounded-3xl p-12 text-center"
-                style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                <span className="text-4xl">🔑</span>
-                <p className="font-semibold mt-4" style={{ color: '#1a2b4a' }}>
-                  Aucun code disponible
-                </p>
-              </div>
-            ) : (
-              <div className="bg-white rounded-2xl md:rounded-3xl overflow-hidden"
-                style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                <div className="grid grid-cols-2 px-4 md:px-6 py-3 text-xs font-semibold"
-                  style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>
-                  <span>CODE</span>
-                  <span>STATUT</span>
-                </div>
-                {codes.map((code, index) => (
-                  <div key={code.id}
-                    className="grid grid-cols-2 px-4 md:px-6 py-3 md:py-4 items-center"
-                    style={{ borderTop: index > 0 ? '0.5px solid #f4f5f7' : 'none' }}>
-                    <span style={{
-                      fontFamily: 'monospace',
-                      fontSize: '13px',
-                      fontWeight: '600',
-                      color: (code.current_uses || 0) > 0 ? '#8a93a2' : '#2BBFB3',
-                      letterSpacing: '2px',
-                      textDecoration: (code.current_uses || 0) > 0 ? 'line-through' : 'none'
-                    }}>
-                      {code.code}
-                    </span>
-                    <span className="text-xs px-2 py-1 rounded-lg font-medium w-fit"
-                      style={{
-                        backgroundColor: (code.current_uses || 0) > 0 ? '#fee2e2' : '#e8f8f7',
-                        color: (code.current_uses || 0) > 0 ? '#ef4444' : '#2BBFB3'
-                      }}>
-                      {(code.current_uses || 0) > 0 ? 'Utilisé' : 'Disponible'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        {activePage === 'codes' && <PartnerCodes user={user} />}
 
         {/* Mon contrat */}
         {activePage === 'contract' && (
