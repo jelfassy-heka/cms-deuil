@@ -27,7 +27,7 @@ export default function CodeGenerator() {
       try {
         const [partnersData, codesData] = await Promise.all([
           xano.getAll('partners'),
-          xano.getAll('plan-activation-codes'),
+          xano.getAll('plan-activation-code'),
         ])
         setPartners(partnersData)
         const used = codesData.filter(c => c.used).length
@@ -62,9 +62,9 @@ export default function CodeGenerator() {
       const generatedCodes = []
       for (let i = 0; i < quantity; i++) generatedCodes.push(generateCode())
 
-      // 2. Sauvegarder dans Xano (plan-activation-codes) — plus besoin de double écriture
+      // 2. Sauvegarder dans Xano (plan-activation-code) — plus besoin de double écriture
       await Promise.all(generatedCodes.map(code =>
-        xano.create('plan-activation-codes', {
+        xano.create('plan-activation-code', {
           code,
           partnerId: parseInt(selectedPartner),
           used: false,

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import xano from '../../lib/xano'
 import PartnerCodes from './PartnerCodes'
+import PartnerTeam from './PartnerTeam'
 
 const requestTypes = [
   { type:'codes', label:'Demande de codes', icon:'🔑', description:'Demander des codes supplémentaires', color:'#2BBFB3' },
@@ -85,6 +86,7 @@ export default function PartnerDashboard() {
   const navItems = [
     { label:'Tableau de bord', icon:'⊞', path:'dashboard' },
     { label:'Mes codes', icon:'🔑', path:'codes' },
+    { label:'Mon équipe', icon:'👥', path:'team' },
     { label:'Mon contrat', icon:'📄', path:'contract' },
     { label:'Mes demandes', icon:'📋', path:'requests' },
     { label:'Nouvelle demande', icon:'✉️', path:'new_request' },
@@ -120,6 +122,8 @@ export default function PartnerDashboard() {
         )}
 
         {activePage==='codes'&&<PartnerCodes partnerId={partnerId} />}
+
+        {activePage==='team'&&<PartnerTeam partnerId={partnerId} />}
 
         {activePage==='contract'&&(
           <div>

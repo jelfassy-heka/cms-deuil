@@ -108,7 +108,7 @@ export default function PartnerCodes({ partnerId }) {
     const fetchData = async () => {
       try {
         const [codesData, benefData] = await Promise.all([
-          xano.getAll('plan-activation-codes', { partnerId }),
+          xano.getAll('plan-activation-code', { partnerId }),
           xano.getAll('beneficiaries', { partner_id: partnerId }),
         ])
         setCodes(codesData); setBeneficiaries(benefData)
