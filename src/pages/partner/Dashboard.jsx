@@ -53,7 +53,7 @@ export default function PartnerDashboard() {
     const fetchData = async () => {
       try {
         const [codesData, contractsData, requestsData] = await Promise.all([
-          xano.getAll('plan-activation-codes', { partnerId }),
+          xano.getAll('plan-activation-code', { partnerId }),
           xano.getAll('contracts', { partner_id: partnerId }),
           xano.getAll('code_request', { partner_id: partnerId }),
         ])
