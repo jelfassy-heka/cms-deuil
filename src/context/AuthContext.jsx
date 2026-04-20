@@ -1,52 +1,83 @@
 import { createContext, useContext, useState, useEffect } from 'react'
+import xano from '../lib/xano'
 
+const DIRECTUS_URL = 'https://directus-production-b0c2.up.railway.app'
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
-  const [role, setRole] = useState(null)
+  const [role, setRole] = useState(null) // 'admin' or 'partner'
+  const [memberRole, setMemberRole] = useState(null) // 'admin' or 'member' (within partner space)
+  const [partnerId, setPartnerId] = useState(null)
   const [loading, setLoading] = useState(true)
 
   // Restaurer la session au chargement
-useEffect(() => {
-  const savedUser = localStorage.getItem('heka_user')
-  const savedRole = localStorage.getItem('heka_role')
-  const savedToken = localStorage.getItem('directus_token')
-  if (savedUser && savedToken) {
-    setUser(JSON.parse(savedUser))
-    setRole(savedRole)
-  }
-  setLoading(false)
+  useEffect(() => {
+    const restore = async () => {
+      const savedUser = localStorage.getItem('heka_user')
+      const savedRole = localStorage.getItem('heka_role')
+      const savedToken = localStorage.getItem('directus_token')
+      const savedPartnerId = localStorage.getItem('heka_partner_id')
+      const savedMemberRole = localStorage.getItem('heka_member_role')
 
-  // Refresh token toutes les 10 minutes
-  const interval = setInterval(async () => {
-    const token = localStorage.getItem('directus_token')
-    if (token) await refreshSession()
-  }, 10 * 60 * 1000)
+      if (savedUser && savedToken) {
+        setUser(JSON.parse(savedUser))
+        setRole(savedRole)
+        if (savedPartnerId) setPartnerId(parseInt(savedPartnerId))
+        if (savedMemberRole) setMemberRole(savedMemberRole)
+      }
+      setLoading(false)
+    }
+    restore()
 
-  return () => clearInterval(interval)
-}, [])
+    // Refresh token toutes les 10 minutes
+    const interval = setInterval(async () => {
+      const token = localStorage.getItem('directus_token')
+      if (token) await refreshSession()
+    }, 10 * 60 * 1000)
+
+    return () => clearInterval(interval)
+  }, [])
+
   const signIn = async (email, password, selectedRole) => {
     try {
-      const response = await fetch('https://directus-production-b0c2.up.railway.app/auth/login', {
+      // 1. Auth via Directus
+      const response = await fetch(`${DIRECTUS_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.errors?.[0]?.message || 'Erreur')
-      
+
       const token = data.data.access_token
       const refreshToken = data.data.refresh_token
       const userData = { email, token }
-      
+
       localStorage.setItem('directus_token', token)
       localStorage.setItem('directus_refresh_token', refreshToken)
       localStorage.setItem('heka_user', JSON.stringify(userData))
       localStorage.setItem('heka_role', selectedRole)
-      
+
       setUser(userData)
       setRole(selectedRole)
+
+      // 2. Si partenaire, chercher le partner_members dans Xano
+      if (selectedRole === 'partner') {
+        try {
+          const members = await xano.getAll('partner_members', { user_email: email })
+          if (members.length > 0) {
+            const member = members.find(m => m.status === 'active') || members[0]
+            setPartnerId(member.partner_id)
+            setMemberRole(member.role || 'member')
+            localStorage.setItem('heka_partner_id', member.partner_id.toString())
+            localStorage.setItem('heka_member_role', member.role || 'member')
+          }
+        } catch (err) {
+          console.error('Erreur lookup partner_members:', err)
+        }
+      }
+
       return { success: true }
     } catch (err) {
       console.error('Erreur login:', err)
@@ -58,21 +89,21 @@ useEffect(() => {
     try {
       const refreshToken = localStorage.getItem('directus_refresh_token')
       if (!refreshToken) return false
-      
-      const response = await fetch('https://directus-production-b0c2.up.railway.app/auth/refresh', {
+
+      const response = await fetch(`${DIRECTUS_URL}/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refreshToken, mode: 'json' }),
       })
       const data = await response.json()
       if (!response.ok) return false
-      
+
       const newToken = data.data.access_token
       const newRefreshToken = data.data.refresh_token
-      
+
       localStorage.setItem('directus_token', newToken)
       localStorage.setItem('directus_refresh_token', newRefreshToken)
-      
+
       setUser(prev => ({ ...prev, token: newToken }))
       return true
     } catch (err) {
@@ -86,14 +117,26 @@ useEffect(() => {
     localStorage.removeItem('directus_refresh_token')
     localStorage.removeItem('heka_user')
     localStorage.removeItem('heka_role')
+    localStorage.removeItem('heka_partner_id')
+    localStorage.removeItem('heka_member_role')
     setUser(null)
     setRole(null)
+    setPartnerId(null)
+    setMemberRole(null)
   }
 
   if (loading) return null
 
   return (
-    <AuthContext.Provider value={{ user, role, signIn, signOut, refreshSession }}>
+    <AuthContext.Provider value={{
+      user,
+      role,
+      partnerId,
+      memberRole,
+      signIn,
+      signOut,
+      refreshSession,
+    }}>
       {children}
     </AuthContext.Provider>
   )

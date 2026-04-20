@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import client from '../../lib/directus'
-import { createItem, readItems, updateItem } from '@directus/sdk'
+import xano from '../../lib/xano'
 
 const statusColors = {
   'prospect': { bg: '#f4f5f7', text: '#8a93a2' },
@@ -11,7 +10,7 @@ const statusColors = {
   'inactif': { bg: '#f4f5f7', text: '#d1d5db' },
 }
 
-const DIRECTUS_FIELDS = [
+const FIELDS = [
   { key: 'name', label: "Nom de l'organisation", required: true },
   { key: 'contact_firstname', label: 'Prénom contact' },
   { key: 'contact_lastname', label: 'Nom contact' },
@@ -27,27 +26,17 @@ function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim())
   if (lines.length < 2) return { headers: [], rows: [] }
   const parseLine = line => {
-    const result = []
-    let current = '', inQuotes = false
+    const result = []; let current = '', inQuotes = false
     for (let i = 0; i < line.length; i++) {
       const ch = line[i]
-      if (ch === '"') {
-        if (inQuotes && line[i + 1] === '"') { current += '"'; i++ }
-        else inQuotes = !inQuotes
-      } else if ((ch === ',' || ch === ';') && !inQuotes) {
-        result.push(current.trim()); current = ''
-      } else current += ch
+      if (ch === '"') { if (inQuotes && line[i+1] === '"') { current += '"'; i++ } else inQuotes = !inQuotes }
+      else if ((ch === ',' || ch === ';') && !inQuotes) { result.push(current.trim()); current = '' }
+      else current += ch
     }
-    result.push(current.trim())
-    return result
+    result.push(current.trim()); return result
   }
   const headers = parseLine(lines[0])
-  const rows = lines.slice(1).map(line => {
-    const values = parseLine(line)
-    const row = {}
-    headers.forEach((h, i) => { row[h] = values[i] || '' })
-    return row
-  })
+  const rows = lines.slice(1).map(line => { const v = parseLine(line); const row = {}; headers.forEach((h, i) => { row[h] = v[i] || '' }); return row })
   return { headers, rows }
 }
 
@@ -55,21 +44,19 @@ function autoMap(csvHeaders) {
   const mapping = {}
   const aliases = {
     name: ['nom', 'organisation', 'entreprise', 'société', 'company', 'name', 'raison sociale'],
-    contact_firstname: ['prénom', 'prenom', 'firstname', 'first_name', 'prénom contact'],
+    contact_firstname: ['prénom', 'prenom', 'firstname', 'first_name'],
     contact_lastname: ['nom contact', 'lastname', 'last_name', 'nom de famille'],
     contact_role: ['poste', 'rôle', 'role', 'fonction', 'title', 'job'],
-    email_contact: ['email', 'mail', 'e-mail', 'courriel', 'email contact'],
-    phone: ['téléphone', 'telephone', 'tel', 'phone', 'mobile', 'numéro'],
-    partner_type: ['type', 'type partenaire', 'catégorie', 'categorie'],
-    crm_status: ['statut', 'status', 'statut crm', 'état', 'etat'],
-    notes_internes: ['notes', 'commentaire', 'commentaires', 'remarques', 'note'],
+    email_contact: ['email', 'mail', 'e-mail', 'courriel'],
+    phone: ['téléphone', 'telephone', 'tel', 'phone', 'mobile'],
+    partner_type: ['type', 'catégorie', 'categorie'],
+    crm_status: ['statut', 'status', 'état', 'etat'],
+    notes_internes: ['notes', 'commentaire', 'remarques'],
   }
   csvHeaders.forEach(header => {
     const h = header.toLowerCase().trim()
     for (const [field, words] of Object.entries(aliases)) {
-      if (words.includes(h) || words.some(w => h.includes(w))) {
-        if (!Object.values(mapping).includes(field)) { mapping[header] = field; break }
-      }
+      if (words.includes(h) || words.some(w => h.includes(w))) { if (!Object.values(mapping).includes(field)) { mapping[header] = field; break } }
     }
   })
   return mapping
@@ -83,42 +70,21 @@ function CSVImportModal({ onClose, onImport }) {
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef()
 
-  const handleFile = file => {
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = e => {
-      const parsed = parseCSV(e.target.result)
-      setCsvData(parsed)
-      setMapping(autoMap(parsed.headers))
-      setStep(2)
-    }
-    reader.readAsText(file, 'UTF-8')
-  }
-
+  const handleFile = file => { if (!file) return; const r = new FileReader(); r.onload = e => { const p = parseCSV(e.target.result); setCsvData(p); setMapping(autoMap(p.headers)); setStep(2) }; r.readAsText(file, 'UTF-8') }
   const handleDrop = e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]) }
-  const mappedFields = Object.values(mapping).filter(Boolean)
-  const hasName = mappedFields.includes('name')
+  const hasName = Object.values(mapping).includes('name')
 
   const handleImport = async () => {
-    setStep(3)
-    const total = csvData.rows.length
-    setProgress({ current: 0, total, errors: [] })
+    setStep(3); const total = csvData.rows.length; setProgress({ current: 0, total, errors: [] })
     const imported = [], errors = []
     for (let i = 0; i < total; i++) {
-      const row = csvData.rows[i]
-      const partner = { partner_type: 'entreprise', crm_status: 'prospect' }
-      for (const [csvCol, directusField] of Object.entries(mapping)) {
-        if (directusField && row[csvCol]) partner[directusField] = row[csvCol]
-      }
-      if (!partner.name) { errors.push({ row: i + 2, reason: 'Nom manquant' }); setProgress(prev => ({ ...prev, current: i + 1, errors })); continue }
-      try {
-        const created = await client.request(createItem('partners', partner))
-        imported.push(created)
-      } catch (err) { errors.push({ row: i + 2, reason: err.message || 'Erreur Directus' }) }
-      setProgress({ current: i + 1, total, errors })
+      const row = csvData.rows[i]; const partner = { partner_type: 'entreprise', crm_status: 'prospect' }
+      for (const [col, field] of Object.entries(mapping)) { if (field && row[col]) partner[field] = row[col] }
+      if (!partner.name) { errors.push({ row: i+2, reason: 'Nom manquant' }); setProgress(p => ({ ...p, current: i+1, errors })); continue }
+      try { imported.push(await xano.create('partners', partner)) } catch (err) { errors.push({ row: i+2, reason: err.message }) }
+      setProgress({ current: i+1, total, errors })
     }
-    setStep(4)
-    onImport(imported)
+    setStep(4); onImport(imported)
   }
 
   return (
@@ -126,104 +92,52 @@ function CSVImportModal({ onClose, onImport }) {
       <div className="bg-white w-full h-full md:h-auto md:rounded-3xl md:max-w-2xl md:max-h-[90vh] overflow-y-auto" style={{ boxShadow: '0 20px 60px rgba(43,191,179,0.15)' }}>
         <div className="flex items-center justify-between p-5 md:p-6 border-b sticky top-0 bg-white z-10" style={{ borderColor: '#f4f5f7' }}>
           <div>
-            <h2 className="text-lg font-bold" style={{ color: '#1a2b4a' }}>
-              {step === 1 && 'Importer un fichier CSV'}{step === 2 && 'Mapper les colonnes'}{step === 3 && 'Importation en cours...'}{step === 4 && 'Import terminé'}
-            </h2>
-            <p className="text-xs mt-0.5" style={{ color: '#8a93a2' }}>
-              {step === 1 && 'Glissez un fichier ou parcourez'}{step === 2 && `${csvData.rows.length} lignes détectées`}{step === 3 && `${progress.current} / ${progress.total}`}{step === 4 && `${progress.total - progress.errors.length} importé(s), ${progress.errors.length} erreur(s)`}
-            </p>
+            <h2 className="text-lg font-bold" style={{ color: '#1a2b4a' }}>{step === 1 && 'Importer un fichier CSV'}{step === 2 && 'Mapper les colonnes'}{step === 3 && 'Importation en cours...'}{step === 4 && 'Import terminé'}</h2>
+            <p className="text-xs mt-0.5" style={{ color: '#8a93a2' }}>{step === 1 && 'Glissez un fichier ou parcourez'}{step === 2 && `${csvData.rows.length} lignes`}{step === 3 && `${progress.current} / ${progress.total}`}{step === 4 && `${progress.total - progress.errors.length} importé(s)`}</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-lg" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>×</button>
         </div>
         <div className="p-5 md:p-6">
           {step === 1 && (
-            <div onDrop={handleDrop} onDragOver={e => { e.preventDefault(); setDragOver(true) }} onDragLeave={() => setDragOver(false)} onClick={() => fileRef.current?.click()}
-              className="rounded-2xl p-10 md:p-16 text-center cursor-pointer transition-all"
-              style={{ backgroundColor: dragOver ? '#e8f8f7' : '#f4f5f7', border: `2px dashed ${dragOver ? '#2BBFB3' : '#d1d5db'}` }}>
+            <div onDrop={handleDrop} onDragOver={e => { e.preventDefault(); setDragOver(true) }} onDragLeave={() => setDragOver(false)} onClick={() => fileRef.current?.click()} className="rounded-2xl p-10 md:p-16 text-center cursor-pointer transition-all" style={{ backgroundColor: dragOver ? '#e8f8f7' : '#f4f5f7', border: `2px dashed ${dragOver ? '#2BBFB3' : '#d1d5db'}` }}>
               <input ref={fileRef} type="file" accept=".csv,.tsv,.txt" className="hidden" onChange={e => handleFile(e.target.files[0])} />
               <span className="text-4xl block mb-4">📄</span>
               <p className="font-semibold" style={{ color: '#1a2b4a' }}>Glissez votre fichier CSV ici</p>
-              <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>ou cliquez pour parcourir · Formats : .csv, .tsv</p>
-              <p className="text-xs mt-4" style={{ color: '#8a93a2' }}>Séparateurs acceptés : virgule (,) ou point-virgule (;)</p>
+              <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>ou cliquez pour parcourir</p>
             </div>
           )}
           {step === 2 && (
             <>
-              <div className="mb-6">
-                <p className="text-sm font-semibold mb-3" style={{ color: '#1a2b4a' }}>Associez vos colonnes CSV aux champs Héka</p>
-                <div className="flex flex-col gap-2">
-                  {csvData.headers.map(header => (
-                    <div key={header} className="flex items-center gap-3 rounded-xl p-3" style={{ backgroundColor: '#f4f5f7' }}>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate" style={{ color: '#1a2b4a' }}>{header}</p>
-                        <p className="text-xs truncate" style={{ color: '#8a93a2' }}>ex: {csvData.rows[0]?.[header] || '—'}</p>
-                      </div>
-                      <span className="text-xs flex-shrink-0" style={{ color: '#8a93a2' }}>→</span>
-                      <select value={mapping[header] || ''} onChange={e => setMapping({ ...mapping, [header]: e.target.value })}
-                        className="px-3 py-2 rounded-xl text-sm outline-none bg-white flex-shrink-0" style={{ color: mapping[header] ? '#1a2b4a' : '#8a93a2', minWidth: '160px' }}>
-                        <option value="">— Ignorer —</option>
-                        {DIRECTUS_FIELDS.map(f => (
-                          <option key={f.key} value={f.key} disabled={Object.values(mapping).includes(f.key) && mapping[header] !== f.key}>
-                            {f.label}{f.required ? ' *' : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
-                </div>
+              <div className="flex flex-col gap-2 mb-6">
+                {csvData.headers.map(header => (
+                  <div key={header} className="flex items-center gap-3 rounded-xl p-3" style={{ backgroundColor: '#f4f5f7' }}>
+                    <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate" style={{ color: '#1a2b4a' }}>{header}</p><p className="text-xs truncate" style={{ color: '#8a93a2' }}>ex: {csvData.rows[0]?.[header] || '—'}</p></div>
+                    <span className="text-xs" style={{ color: '#8a93a2' }}>→</span>
+                    <select value={mapping[header] || ''} onChange={e => setMapping({ ...mapping, [header]: e.target.value })} className="px-3 py-2 rounded-xl text-sm outline-none bg-white" style={{ color: mapping[header] ? '#1a2b4a' : '#8a93a2', minWidth: '160px' }}>
+                      <option value="">— Ignorer —</option>
+                      {FIELDS.map(f => <option key={f.key} value={f.key} disabled={Object.values(mapping).includes(f.key) && mapping[header] !== f.key}>{f.label}{f.required ? ' *' : ''}</option>)}
+                    </select>
+                  </div>
+                ))}
               </div>
-              <div className="mb-6">
-                <p className="text-sm font-semibold mb-3" style={{ color: '#1a2b4a' }}>Aperçu ({Math.min(5, csvData.rows.length)} premières lignes)</p>
-                <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid #f4f5f7' }}>
-                  <table className="w-full text-sm" style={{ minWidth: '500px' }}>
-                    <thead><tr style={{ backgroundColor: '#f4f5f7' }}>
-                      {csvData.headers.filter(h => mapping[h]).map(h => (
-                        <th key={h} className="px-3 py-2 text-left text-xs font-semibold" style={{ color: '#8a93a2' }}>{DIRECTUS_FIELDS.find(f => f.key === mapping[h])?.label || h}</th>
-                      ))}
-                    </tr></thead>
-                    <tbody>
-                      {csvData.rows.slice(0, 5).map((row, i) => (
-                        <tr key={i} style={{ borderTop: '1px solid #f4f5f7' }}>
-                          {csvData.headers.filter(h => mapping[h]).map(h => (
-                            <td key={h} className="px-3 py-2 text-sm" style={{ color: '#1a2b4a' }}>{row[h] || '—'}</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              {!hasName && <div className="rounded-2xl p-3 mb-4 text-sm" style={{ backgroundColor: '#fee2e2', color: '#ef4444' }}>Vous devez associer au moins la colonne "Nom de l'organisation"</div>}
+              {!hasName && <div className="rounded-2xl p-3 mb-4 text-sm" style={{ backgroundColor: '#fee2e2', color: '#ef4444' }}>Associez au moins "Nom de l'organisation"</div>}
               <div className="flex flex-col sm:flex-row gap-3">
-                <button onClick={handleImport} disabled={!hasName} className="px-6 py-3 rounded-2xl text-white text-sm font-semibold transition-all" style={{ backgroundColor: hasName ? '#2BBFB3' : '#d1d5db' }}>
-                  Importer {csvData.rows.length} partenaire{csvData.rows.length > 1 ? 's' : ''} →
-                </button>
+                <button onClick={handleImport} disabled={!hasName} className="px-6 py-3 rounded-2xl text-white text-sm font-semibold" style={{ backgroundColor: hasName ? '#2BBFB3' : '#d1d5db' }}>Importer {csvData.rows.length} partenaire{csvData.rows.length > 1 ? 's' : ''} →</button>
                 <button onClick={() => setStep(1)} className="px-6 py-3 rounded-2xl text-sm font-semibold" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>← Changer de fichier</button>
               </div>
             </>
           )}
           {step === 3 && (
             <div className="text-center py-8">
-              <div className="w-full rounded-full h-3 mb-4" style={{ backgroundColor: '#f4f5f7' }}>
-                <div className="h-3 rounded-full transition-all" style={{ width: `${(progress.current / progress.total) * 100}%`, backgroundColor: '#2BBFB3' }} />
-              </div>
-              <p className="text-lg font-bold mb-1" style={{ color: '#1a2b4a' }}>{progress.current} / {progress.total}</p>
-              <p className="text-sm" style={{ color: '#8a93a2' }}>Création des partenaires dans Directus...</p>
-              {progress.errors.length > 0 && <p className="text-xs mt-2" style={{ color: '#ef4444' }}>{progress.errors.length} erreur(s)</p>}
+              <div className="w-full rounded-full h-3 mb-4" style={{ backgroundColor: '#f4f5f7' }}><div className="h-3 rounded-full transition-all" style={{ width: `${(progress.current / progress.total) * 100}%`, backgroundColor: '#2BBFB3' }} /></div>
+              <p className="text-lg font-bold" style={{ color: '#1a2b4a' }}>{progress.current} / {progress.total}</p>
             </div>
           )}
           {step === 4 && (
             <div className="text-center py-8">
               <span className="text-4xl block mb-4">{progress.errors.length === 0 ? '✅' : '⚠️'}</span>
-              <p className="text-lg font-bold mb-1" style={{ color: '#1a2b4a' }}>{progress.total - progress.errors.length} partenaire(s) importé(s)</p>
-              {progress.errors.length > 0 && (
-                <div className="mt-4 text-left">
-                  <p className="text-sm font-semibold mb-2" style={{ color: '#ef4444' }}>{progress.errors.length} erreur(s) :</p>
-                  <div className="rounded-xl p-3 max-h-32 overflow-y-auto" style={{ backgroundColor: '#fee2e2' }}>
-                    {progress.errors.map((err, i) => <p key={i} className="text-xs mb-1" style={{ color: '#ef4444' }}>Ligne {err.row} : {err.reason}</p>)}
-                  </div>
-                </div>
-              )}
+              <p className="text-lg font-bold mb-1" style={{ color: '#1a2b4a' }}>{progress.total - progress.errors.length} importé(s)</p>
+              {progress.errors.length > 0 && <div className="mt-4 text-left rounded-xl p-3 max-h-32 overflow-y-auto" style={{ backgroundColor: '#fee2e2' }}>{progress.errors.map((e, i) => <p key={i} className="text-xs mb-1" style={{ color: '#ef4444' }}>Ligne {e.row} : {e.reason}</p>)}</div>}
               <button onClick={onClose} className="mt-6 px-6 py-3 rounded-2xl text-white text-sm font-semibold" style={{ backgroundColor: '#2BBFB3' }}>Fermer</button>
             </div>
           )}
@@ -241,33 +155,27 @@ function PartnerModal({ partner, onClose, onUpdate }) {
   const [activityForm, setActivityForm] = useState({ activity_type: 'call', note: '', crm_status: '', next_followup_at: '' })
 
   useEffect(() => {
-    const fetchActivities = async () => {
-      try {
-        const data = await client.request(readItems('crm_activity', { filter: { partner_id: { _eq: partner.id } }, sort: ['-date_created'] }))
-        setActivities(data)
-      } catch (err) { console.error('Erreur activités:', err) }
-    }
-    fetchActivities()
+    xano.getAll('crm_activity', { partner_id: partner.id }).then(setActivities).catch(console.error)
   }, [partner.id])
 
   const handleSave = async () => {
     try {
-      const updated = await client.request(updateItem('partners', partner.id, {
+      const updated = await xano.update('partners', partner.id, {
         name: form.name, partner_type: form.partner_type, email_contact: form.email_contact,
         phone: form.phone, crm_status: form.crm_status, notes_internes: form.notes_internes,
         contact_firstname: form.contact_firstname, contact_lastname: form.contact_lastname, contact_role: form.contact_role,
-      }))
+      })
       onUpdate(updated); setEditing(false)
-    } catch (err) { console.error('Erreur mise à jour:', err) }
+    } catch (err) { console.error('Erreur:', err) }
   }
 
   const handleAddActivity = async e => {
     e.preventDefault()
     try {
-      const newActivity = await client.request(createItem('crm_activity', { ...activityForm, partner_id: partner.id, last_contact_at: new Date().toISOString() }))
-      setActivities([newActivity, ...activities]); setShowActivityForm(false)
+      const created = await xano.create('crm_activity', { ...activityForm, partner_id: partner.id, last_contact_at: new Date().toISOString() })
+      setActivities([created, ...activities]); setShowActivityForm(false)
       setActivityForm({ activity_type: 'call', note: '', crm_status: '', next_followup_at: '' })
-    } catch (err) { console.error('Erreur activité:', err) }
+    } catch (err) { console.error('Erreur:', err) }
   }
 
   return (
@@ -277,13 +185,8 @@ function PartnerModal({ partner, onClose, onUpdate }) {
           <div className="flex items-center gap-3 md:gap-4 flex-1 min-w-0">
             <div className="w-12 h-12 md:w-16 md:h-16 rounded-2xl flex items-center justify-center text-white text-lg md:text-2xl font-bold flex-shrink-0" style={{ backgroundColor: '#2BBFB3' }}>{partner.name?.[0]}</div>
             <div className="min-w-0 flex-1">
-              {editing ? (
-                <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="text-lg md:text-xl font-bold px-3 py-1 rounded-xl outline-none w-full" style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }} />
-              ) : (
-                <h2 className="text-lg md:text-xl font-bold truncate" style={{ color: '#1a2b4a' }}>
-                  {[partner.contact_firstname, partner.contact_lastname].filter(Boolean).join(' ') || partner.name}
-                  {partner.contact_firstname && <span className="text-sm md:text-base font-normal ml-2 hidden sm:inline" style={{ color: '#8a93a2' }}>— {partner.name}</span>}
-                </h2>
+              {editing ? <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="text-lg font-bold px-3 py-1 rounded-xl outline-none w-full" style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }} /> : (
+                <h2 className="text-lg md:text-xl font-bold truncate" style={{ color: '#1a2b4a' }}>{[partner.contact_firstname, partner.contact_lastname].filter(Boolean).join(' ') || partner.name}{partner.contact_firstname && <span className="text-sm font-normal ml-2 hidden sm:inline" style={{ color: '#8a93a2' }}>— {partner.name}</span>}</h2>
               )}
               <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <span className="text-xs px-2 py-1 rounded-lg" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>{partner.partner_type || 'entreprise'}</span>
@@ -292,97 +195,67 @@ function PartnerModal({ partner, onClose, onUpdate }) {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-            {editing ? (
-              <><button onClick={handleSave} className="px-3 md:px-4 py-2 rounded-xl text-white text-sm font-medium" style={{ backgroundColor: '#2BBFB3' }}>Sauvegarder</button>
-              <button onClick={() => { setEditing(false); setForm({ ...partner }) }} className="px-3 py-2 rounded-xl text-sm font-medium hidden sm:block" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>Annuler</button></>
-            ) : (
-              <button onClick={() => setEditing(true)} className="px-3 py-2 rounded-xl text-sm font-medium" style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }}>✏️ <span className="hidden sm:inline">Modifier</span></button>
+            {editing ? (<><button onClick={handleSave} className="px-3 py-2 rounded-xl text-white text-sm font-medium" style={{ backgroundColor: '#2BBFB3' }}>Sauvegarder</button><button onClick={() => { setEditing(false); setForm({ ...partner }) }} className="px-3 py-2 rounded-xl text-sm font-medium hidden sm:block" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>Annuler</button></>) : (
+              <button onClick={() => setEditing(true)} className="px-3 py-2 rounded-xl text-sm font-medium" style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }}>✏️</button>
             )}
             <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-lg" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>×</button>
           </div>
         </div>
         <div className="p-4 md:p-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
-            <div className="rounded-2xl p-4 md:p-5" style={{ backgroundColor: '#f4f5f7' }}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-6">
+            <div className="rounded-2xl p-4" style={{ backgroundColor: '#f4f5f7' }}>
               <p className="text-xs font-semibold mb-3" style={{ color: '#8a93a2' }}>CONTACT PRINCIPAL</p>
               {editing ? (
-                <div className="flex flex-col gap-3">
-                  {[{ key: 'contact_firstname', placeholder: 'Prénom' },{ key: 'contact_lastname', placeholder: 'Nom' },{ key: 'contact_role', placeholder: 'Poste (ex: DRH)' },{ key: 'email_contact', placeholder: 'Email' },{ key: 'phone', placeholder: 'Téléphone' }].map(field => (
-                    <input key={field.key} value={form[field.key] || ''} onChange={e => setForm({ ...form, [field.key]: e.target.value })} placeholder={field.placeholder} className="w-full px-3 py-2 rounded-xl text-sm outline-none bg-white" style={{ color: '#1a2b4a' }} />
-                  ))}
-                </div>
+                <div className="flex flex-col gap-3">{[{ key: 'contact_firstname', p: 'Prénom' },{ key: 'contact_lastname', p: 'Nom' },{ key: 'contact_role', p: 'Poste' },{ key: 'email_contact', p: 'Email' },{ key: 'phone', p: 'Téléphone' }].map(f => <input key={f.key} value={form[f.key]||''} onChange={e => setForm({...form,[f.key]:e.target.value})} placeholder={f.p} className="w-full px-3 py-2 rounded-xl text-sm outline-none bg-white" style={{color:'#1a2b4a'}} />)}</div>
               ) : (
                 <div className="flex flex-col gap-2">
                   <p className="font-semibold" style={{ color: '#1a2b4a' }}>{partner.contact_firstname || '—'} {partner.contact_lastname || ''}</p>
-                  <p className="text-sm" style={{ color: '#8a93a2' }}>{partner.contact_role || 'Poste non renseigné'}</p>
-                  <p className="text-sm" style={{ color: '#2BBFB3' }}>{partner.email_contact || 'Email non renseigné'}</p>
-                  <p className="text-sm" style={{ color: '#8a93a2' }}>{partner.phone || 'Téléphone non renseigné'}</p>
+                  <p className="text-sm" style={{ color: '#8a93a2' }}>{partner.contact_role || 'Non renseigné'}</p>
+                  <p className="text-sm" style={{ color: '#2BBFB3' }}>{partner.email_contact || 'Non renseigné'}</p>
+                  <p className="text-sm" style={{ color: '#8a93a2' }}>{partner.phone || 'Non renseigné'}</p>
                 </div>
               )}
             </div>
-            <div className="rounded-2xl p-4 md:p-5" style={{ backgroundColor: '#f4f5f7' }}>
+            <div className="rounded-2xl p-4" style={{ backgroundColor: '#f4f5f7' }}>
               <p className="text-xs font-semibold mb-3" style={{ color: '#8a93a2' }}>STATUT & TYPE</p>
               {editing ? (
                 <div className="flex flex-col gap-3">
-                  <select value={form.partner_type || 'entreprise'} onChange={e => setForm({ ...form, partner_type: e.target.value })} className="w-full px-3 py-2 rounded-xl text-sm outline-none bg-white">
-                    <option value="entreprise">Entreprise</option><option value="mutuelle">Mutuelle</option><option value="prospect">Prospect</option>
-                  </select>
-                  <select value={form.crm_status || 'prospect'} onChange={e => setForm({ ...form, crm_status: e.target.value })} className="w-full px-3 py-2 rounded-xl text-sm outline-none bg-white">
-                    <option value="prospect">Prospect</option><option value="à contacter">À contacter</option><option value="à relancer">À relancer</option><option value="en cours">En cours</option><option value="client actif">Client actif</option><option value="inactif">Inactif</option>
-                  </select>
+                  <select value={form.partner_type||'entreprise'} onChange={e => setForm({...form,partner_type:e.target.value})} className="w-full px-3 py-2 rounded-xl text-sm outline-none bg-white"><option value="entreprise">Entreprise</option><option value="mutuelle">Mutuelle</option><option value="prospect">Prospect</option></select>
+                  <select value={form.crm_status||'prospect'} onChange={e => setForm({...form,crm_status:e.target.value})} className="w-full px-3 py-2 rounded-xl text-sm outline-none bg-white"><option value="prospect">Prospect</option><option value="à contacter">À contacter</option><option value="à relancer">À relancer</option><option value="en cours">En cours</option><option value="client actif">Client actif</option><option value="inactif">Inactif</option></select>
                 </div>
               ) : (
-                <div className="flex flex-col gap-3">
-                  {[{ label: 'Type', value: partner.partner_type || 'entreprise' },{ label: 'Statut CRM', value: partner.crm_status || 'prospect' },{ label: 'Créé le', value: new Date(partner.date_created).toLocaleDateString('fr-FR') }].map(item => (
-                    <div key={item.label}><p className="text-xs" style={{ color: '#8a93a2' }}>{item.label}</p><p className="text-sm font-medium" style={{ color: '#1a2b4a' }}>{item.value}</p></div>
-                  ))}
-                </div>
+                <div className="flex flex-col gap-3">{[{ l: 'Type', v: partner.partner_type||'entreprise' },{ l: 'Statut', v: partner.crm_status||'prospect' },{ l: 'Créé le', v: new Date(partner.created_at).toLocaleDateString('fr-FR') }].map(i => <div key={i.l}><p className="text-xs" style={{color:'#8a93a2'}}>{i.l}</p><p className="text-sm font-medium" style={{color:'#1a2b4a'}}>{i.v}</p></div>)}</div>
               )}
             </div>
           </div>
           <div className="mb-6">
             <p className="text-xs font-semibold mb-3" style={{ color: '#8a93a2' }}>NOTES INTERNES</p>
-            {editing ? (
-              <textarea value={form.notes_internes || ''} onChange={e => setForm({ ...form, notes_internes: e.target.value })} placeholder="Notes internes..." rows={3} className="w-full px-4 py-3 rounded-2xl text-sm outline-none resize-none" style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }} />
-            ) : (
-              <div className="rounded-2xl p-4" style={{ backgroundColor: '#f4f5f7' }}><p className="text-sm" style={{ color: partner.notes_internes ? '#1a2b4a' : '#8a93a2' }}>{partner.notes_internes || 'Aucune note'}</p></div>
+            {editing ? <textarea value={form.notes_internes||''} onChange={e => setForm({...form,notes_internes:e.target.value})} rows={3} className="w-full px-4 py-3 rounded-2xl text-sm outline-none resize-none" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}} /> : (
+              <div className="rounded-2xl p-4" style={{backgroundColor:'#f4f5f7'}}><p className="text-sm" style={{color:partner.notes_internes?'#1a2b4a':'#8a93a2'}}>{partner.notes_internes||'Aucune note'}</p></div>
             )}
           </div>
           <div>
             <div className="flex items-center justify-between mb-4">
-              <p className="text-xs font-semibold" style={{ color: '#8a93a2' }}>ACTIVITÉS CRM ({activities.length})</p>
+              <p className="text-xs font-semibold" style={{ color: '#8a93a2' }}>ACTIVITÉS ({activities.length})</p>
               <button onClick={() => setShowActivityForm(!showActivityForm)} className="px-3 py-1.5 rounded-xl text-white text-xs font-medium" style={{ backgroundColor: '#2BBFB3' }}>+ Ajouter</button>
             </div>
             {showActivityForm && (
-              <form onSubmit={handleAddActivity} className="rounded-2xl p-4 mb-4" style={{ backgroundColor: '#f4f5f7' }}>
+              <form onSubmit={handleAddActivity} className="rounded-2xl p-4 mb-4" style={{backgroundColor:'#f4f5f7'}}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-                  <select value={activityForm.activity_type} onChange={e => setActivityForm({ ...activityForm, activity_type: e.target.value })} className="px-3 py-2 rounded-xl text-sm outline-none bg-white">
-                    <option value="call">Appel</option><option value="email">Email</option><option value="meeting">Réunion</option><option value="demo">Démo</option>
-                  </select>
-                  <input type="date" value={activityForm.next_followup_at} onChange={e => setActivityForm({ ...activityForm, next_followup_at: e.target.value })} className="px-3 py-2 rounded-xl text-sm outline-none bg-white" />
+                  <select value={activityForm.activity_type} onChange={e => setActivityForm({...activityForm,activity_type:e.target.value})} className="px-3 py-2 rounded-xl text-sm outline-none bg-white"><option value="call">Appel</option><option value="email">Email</option><option value="meeting">Réunion</option><option value="demo">Démo</option></select>
+                  <input type="date" value={activityForm.next_followup_at} onChange={e => setActivityForm({...activityForm,next_followup_at:e.target.value})} className="px-3 py-2 rounded-xl text-sm outline-none bg-white" />
                 </div>
-                <textarea value={activityForm.note} onChange={e => setActivityForm({ ...activityForm, note: e.target.value })} placeholder="Note..." rows={2} className="w-full px-3 py-2 rounded-xl text-sm outline-none resize-none bg-white mb-3" />
-                <div className="flex gap-2">
-                  <button type="submit" className="px-4 py-2 rounded-xl text-white text-sm font-medium" style={{ backgroundColor: '#2BBFB3' }}>Enregistrer</button>
-                  <button type="button" onClick={() => setShowActivityForm(false)} className="px-4 py-2 rounded-xl text-sm font-medium bg-white" style={{ color: '#8a93a2' }}>Annuler</button>
-                </div>
+                <textarea value={activityForm.note} onChange={e => setActivityForm({...activityForm,note:e.target.value})} placeholder="Note..." rows={2} className="w-full px-3 py-2 rounded-xl text-sm outline-none resize-none bg-white mb-3" />
+                <div className="flex gap-2"><button type="submit" className="px-4 py-2 rounded-xl text-white text-sm font-medium" style={{backgroundColor:'#2BBFB3'}}>Enregistrer</button><button type="button" onClick={() => setShowActivityForm(false)} className="px-4 py-2 rounded-xl text-sm bg-white" style={{color:'#8a93a2'}}>Annuler</button></div>
               </form>
             )}
             <div className="flex flex-col gap-2">
-              {activities.length === 0 ? <p className="text-sm text-center py-4" style={{ color: '#8a93a2' }}>Aucune activité enregistrée</p> : (
-                activities.map(activity => (
-                  <div key={activity.id} className="rounded-2xl p-3 md:p-4 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3" style={{ backgroundColor: '#f4f5f7' }}>
-                    <span className="text-xs px-2 py-1 rounded-lg font-medium w-fit" style={{ backgroundColor: '#e8f8f7', color: '#2BBFB3' }}>{activity.activity_type}</span>
-                    <div className="flex-1">
-                      {activity.note && <p className="text-sm mb-1" style={{ color: '#1a2b4a' }}>{activity.note}</p>}
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <span className="text-xs" style={{ color: '#8a93a2' }}>{new Date(activity.last_contact_at).toLocaleDateString('fr-FR')}</span>
-                        {activity.next_followup_at && <span className="text-xs" style={{ color: '#d97706' }}>Relance : {new Date(activity.next_followup_at).toLocaleDateString('fr-FR')}</span>}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
+              {activities.length === 0 ? <p className="text-sm text-center py-4" style={{color:'#8a93a2'}}>Aucune activité</p> : activities.map(a => (
+                <div key={a.id} className="rounded-2xl p-3 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3" style={{backgroundColor:'#f4f5f7'}}>
+                  <span className="text-xs px-2 py-1 rounded-lg font-medium w-fit" style={{backgroundColor:'#e8f8f7',color:'#2BBFB3'}}>{a.activity_type}</span>
+                  <div className="flex-1">{a.note && <p className="text-sm mb-1" style={{color:'#1a2b4a'}}>{a.note}</p>}<div className="flex items-center gap-3 flex-wrap"><span className="text-xs" style={{color:'#8a93a2'}}>{new Date(a.last_contact_at).toLocaleDateString('fr-FR')}</span>{a.next_followup_at && <span className="text-xs" style={{color:'#d97706'}}>Relance : {new Date(a.next_followup_at).toLocaleDateString('fr-FR')}</span>}</div></div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -403,232 +276,120 @@ export default function Partners() {
   const [collapsedGroups, setCollapsedGroups] = useState({})
   const [sortField, setSortField] = useState('name')
   const [sortDir, setSortDir] = useState('asc')
-  const [form, setForm] = useState({ name: '', email_contact: '', phone: '', partner_type: 'entreprise', crm_status: 'prospect', notes_internes: '', contact_firstname: '', contact_lastname: '', contact_role: '' })
+  const [form, setForm] = useState({ name:'',email_contact:'',phone:'',partner_type:'entreprise',crm_status:'prospect',notes_internes:'',contact_firstname:'',contact_lastname:'',contact_role:'' })
 
-  useEffect(() => {
-    const fetchPartners = async () => {
-      try { const data = await client.request(readItems('partners')); setPartners(data) }
-      catch (err) { console.error('Erreur chargement partenaires:', err) }
-      finally { setLoading(false) }
-    }
-    fetchPartners()
-  }, [])
+  useEffect(() => { xano.getAll('partners').then(setPartners).catch(console.error).finally(() => setLoading(false)) }, [])
 
   const processedPartners = useMemo(() => {
-    let result = [...partners]
-    if (search) { const s = search.toLowerCase(); result = result.filter(p => `${p.name} ${p.contact_firstname} ${p.contact_lastname} ${p.email_contact} ${p.contact_role}`.toLowerCase().includes(s)) }
-    result.sort((a, b) => { const va = (a[sortField] || '').toString().toLowerCase(); const vb = (b[sortField] || '').toString().toLowerCase(); return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va) })
-    return result
+    let r = [...partners]
+    if (search) { const s = search.toLowerCase(); r = r.filter(p => `${p.name} ${p.contact_firstname} ${p.contact_lastname} ${p.email_contact} ${p.contact_role}`.toLowerCase().includes(s)) }
+    r.sort((a, b) => { const va = (a[sortField]||'').toString().toLowerCase(); const vb = (b[sortField]||'').toString().toLowerCase(); return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va) })
+    return r
   }, [partners, search, sortField, sortDir])
 
   const groupedPartners = useMemo(() => {
     if (groupBy === 'none') return { 'Tous': processedPartners }
-    const groups = {}
-    processedPartners.forEach(p => { const key = p[groupBy] || (groupBy === 'crm_status' ? 'prospect' : 'entreprise'); if (!groups[key]) groups[key] = []; groups[key].push(p) })
-    const order = groupBy === 'crm_status' ? ['prospect', 'à contacter', 'à relancer', 'en cours', 'client actif', 'inactif'] : ['entreprise', 'mutuelle', 'prospect']
-    const sorted = {}
-    order.forEach(k => { if (groups[k]) sorted[k] = groups[k] })
-    Object.keys(groups).forEach(k => { if (!sorted[k]) sorted[k] = groups[k] })
-    return sorted
+    const groups = {}; processedPartners.forEach(p => { const k = p[groupBy]||(groupBy==='crm_status'?'prospect':'entreprise'); if(!groups[k])groups[k]=[]; groups[k].push(p) })
+    const order = groupBy==='crm_status'?['prospect','à contacter','à relancer','en cours','client actif','inactif']:['entreprise','mutuelle','prospect']
+    const sorted = {}; order.forEach(k => { if(groups[k])sorted[k]=groups[k] }); Object.keys(groups).forEach(k => { if(!sorted[k])sorted[k]=groups[k] }); return sorted
   }, [processedPartners, groupBy])
 
-  const toggleGroup = key => setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }))
-  const handleSort = field => { if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(field); setSortDir('asc') } }
-  const handleChange = e => setForm({ ...form, [e.target.name]: e.target.value })
+  const toggleGroup = key => setCollapsedGroups(p => ({...p,[key]:!p[key]}))
+  const handleSort = field => { if(sortField===field)setSortDir(d=>d==='asc'?'desc':'asc'); else{setSortField(field);setSortDir('asc')} }
+  const handleChange = e => setForm({...form,[e.target.name]:e.target.value})
 
   const handleSubmit = async e => {
     e.preventDefault()
-    try { const newPartner = await client.request(createItem('partners', form)); setPartners([...partners, newPartner]); setForm({ name: '', email_contact: '', phone: '', partner_type: 'entreprise', crm_status: 'prospect', notes_internes: '', contact_firstname: '', contact_lastname: '', contact_role: '' }); setShowForm(false) }
-    catch (err) { console.error('Erreur création:', err); alert('Erreur lors de la création.') }
+    try { const n = await xano.create('partners', form); setPartners([...partners,n]); setForm({name:'',email_contact:'',phone:'',partner_type:'entreprise',crm_status:'prospect',notes_internes:'',contact_firstname:'',contact_lastname:'',contact_role:''}); setShowForm(false) }
+    catch(err) { console.error(err); alert('Erreur') }
   }
 
-  const handleUpdate = updated => { setPartners(partners.map(p => p.id === updated.id ? updated : p)); setSelectedPartner(updated) }
-  const handleCSVImport = imported => setPartners(prev => [...prev, ...imported])
+  const handleUpdate = u => { setPartners(partners.map(p=>p.id===u.id?u:p)); setSelectedPartner(u) }
 
-  if (loading) return <div className="flex items-center justify-center h-64"><p style={{ color: '#8a93a2' }}>Chargement...</p></div>
+  if (loading) return <div className="flex items-center justify-center h-64"><p style={{color:'#8a93a2'}}>Chargement...</p></div>
 
-  const renderCards = list => (
-    <div className="flex flex-col gap-3">
-      {list.map(partner => (
-        <div key={partner.id} onClick={() => setSelectedPartner(partner)}
-          className="bg-white rounded-2xl md:rounded-3xl px-4 md:px-6 py-4 md:py-5 flex flex-col sm:flex-row sm:items-center justify-between cursor-pointer transition-all hover:shadow-md gap-3"
-          style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-          <div className="flex items-center gap-3 md:gap-4">
-            <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center font-bold text-white text-base md:text-lg flex-shrink-0" style={{ backgroundColor: '#2BBFB3' }}>{partner.name?.[0]}</div>
-            <div className="min-w-0">
-              <p className="font-semibold truncate" style={{ color: '#1a2b4a' }}>{partner.name}</p>
-              <p className="text-sm truncate" style={{ color: '#8a93a2' }}>{partner.contact_firstname} {partner.contact_lastname}{partner.contact_role ? ` · ${partner.contact_role}` : ''}</p>
-              <p className="text-xs mt-0.5 truncate" style={{ color: '#8a93a2' }}>{partner.email_contact}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs px-3 py-1 rounded-full font-medium" style={{ backgroundColor: statusColors[partner.crm_status]?.bg || '#f4f5f7', color: statusColors[partner.crm_status]?.text || '#8a93a2' }}>{partner.crm_status || 'prospect'}</span>
-            <span className="text-xs px-3 py-1 rounded-full" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>{partner.partner_type || 'entreprise'}</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
+  const renderCards = list => (<div className="flex flex-col gap-3">{list.map(p => (
+    <div key={p.id} onClick={() => setSelectedPartner(p)} className="bg-white rounded-2xl md:rounded-3xl px-4 md:px-6 py-4 md:py-5 flex flex-col sm:flex-row sm:items-center justify-between cursor-pointer transition-all hover:shadow-md gap-3" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
+      <div className="flex items-center gap-3 md:gap-4"><div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center font-bold text-white" style={{backgroundColor:'#2BBFB3'}}>{p.name?.[0]}</div><div className="min-w-0"><p className="font-semibold truncate" style={{color:'#1a2b4a'}}>{p.name}</p><p className="text-sm truncate" style={{color:'#8a93a2'}}>{p.contact_firstname} {p.contact_lastname}{p.contact_role?` · ${p.contact_role}`:''}</p><p className="text-xs mt-0.5 truncate" style={{color:'#8a93a2'}}>{p.email_contact}</p></div></div>
+      <div className="flex items-center gap-2 flex-wrap"><span className="text-xs px-3 py-1 rounded-full font-medium" style={{backgroundColor:statusColors[p.crm_status]?.bg||'#f4f5f7',color:statusColors[p.crm_status]?.text||'#8a93a2'}}>{p.crm_status||'prospect'}</span><span className="text-xs px-3 py-1 rounded-full" style={{backgroundColor:'#f4f5f7',color:'#8a93a2'}}>{p.partner_type||'entreprise'}</span></div>
+    </div>))}</div>)
 
-  const tableColumns = [
-    { key: 'name', label: 'Organisation' },{ key: 'contact_firstname', label: 'Contact' },
-    { key: 'email_contact', label: 'Email' },{ key: 'phone', label: 'Téléphone' },
-    { key: 'partner_type', label: 'Type' },{ key: 'crm_status', label: 'Statut' },
-  ]
+  const tableCols = [{key:'name',label:'Organisation'},{key:'contact_firstname',label:'Contact'},{key:'email_contact',label:'Email'},{key:'phone',label:'Téléphone'},{key:'partner_type',label:'Type'},{key:'crm_status',label:'Statut'}]
 
   const renderTable = list => (
-    <div className="bg-white rounded-2xl md:rounded-3xl overflow-hidden" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-      <div className="overflow-x-auto">
-        <table className="w-full" style={{ minWidth: '700px' }}>
-          <thead><tr style={{ backgroundColor: '#f4f5f7' }}>
-            {tableColumns.map(col => (
-              <th key={col.key} onClick={() => handleSort(col.key)} className="px-4 md:px-5 py-3 text-left text-xs font-semibold cursor-pointer select-none" style={{ color: '#8a93a2' }}>
-                {col.label}{sortField === col.key && <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>}
-              </th>
-            ))}
-          </tr></thead>
-          <tbody>
-            {list.map((p, i) => (
-              <tr key={p.id} onClick={() => setSelectedPartner(p)} className="cursor-pointer transition-colors" style={{ borderTop: i > 0 ? '1px solid #f4f5f7' : 'none' }}
-                onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fafbfc'} onMouseLeave={e => e.currentTarget.style.backgroundColor = ''}>
-                <td className="px-4 md:px-5 py-3"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ backgroundColor: '#2BBFB3' }}>{p.name?.[0]}</div><span className="text-sm font-medium truncate" style={{ color: '#1a2b4a' }}>{p.name}</span></div></td>
-                <td className="px-4 md:px-5 py-3 text-sm" style={{ color: '#1a2b4a' }}>{[p.contact_firstname, p.contact_lastname].filter(Boolean).join(' ') || '—'}{p.contact_role && <span className="block text-xs" style={{ color: '#8a93a2' }}>{p.contact_role}</span>}</td>
-                <td className="px-4 md:px-5 py-3 text-sm" style={{ color: '#8a93a2' }}>{p.email_contact || '—'}</td>
-                <td className="px-4 md:px-5 py-3 text-sm" style={{ color: '#8a93a2' }}>{p.phone || '—'}</td>
-                <td className="px-4 md:px-5 py-3"><span className="text-xs px-2 py-1 rounded-lg" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>{p.partner_type || 'entreprise'}</span></td>
-                <td className="px-4 md:px-5 py-3"><span className="text-xs px-2 py-1 rounded-lg font-medium" style={{ backgroundColor: statusColors[p.crm_status]?.bg || '#f4f5f7', color: statusColors[p.crm_status]?.text || '#8a93a2' }}>{p.crm_status || 'prospect'}</span></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
+    <div className="bg-white rounded-2xl overflow-hidden" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
+      <div className="overflow-x-auto"><table className="w-full" style={{minWidth:'700px'}}><thead><tr style={{backgroundColor:'#f4f5f7'}}>{tableCols.map(c=><th key={c.key} onClick={()=>handleSort(c.key)} className="px-4 py-3 text-left text-xs font-semibold cursor-pointer" style={{color:'#8a93a2'}}>{c.label}{sortField===c.key&&<span className="ml-1">{sortDir==='asc'?'↑':'↓'}</span>}</th>)}</tr></thead>
+      <tbody>{list.map((p,i)=><tr key={p.id} onClick={()=>setSelectedPartner(p)} className="cursor-pointer" style={{borderTop:i>0?'1px solid #f4f5f7':'none'}} onMouseEnter={e=>e.currentTarget.style.backgroundColor='#fafbfc'} onMouseLeave={e=>e.currentTarget.style.backgroundColor=''}>
+        <td className="px-4 py-3"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{backgroundColor:'#2BBFB3'}}>{p.name?.[0]}</div><span className="text-sm font-medium" style={{color:'#1a2b4a'}}>{p.name}</span></div></td>
+        <td className="px-4 py-3 text-sm" style={{color:'#1a2b4a'}}>{[p.contact_firstname,p.contact_lastname].filter(Boolean).join(' ')||'—'}</td>
+        <td className="px-4 py-3 text-sm" style={{color:'#8a93a2'}}>{p.email_contact||'—'}</td>
+        <td className="px-4 py-3 text-sm" style={{color:'#8a93a2'}}>{p.phone||'—'}</td>
+        <td className="px-4 py-3"><span className="text-xs px-2 py-1 rounded-lg" style={{backgroundColor:'#f4f5f7',color:'#8a93a2'}}>{p.partner_type||'entreprise'}</span></td>
+        <td className="px-4 py-3"><span className="text-xs px-2 py-1 rounded-lg font-medium" style={{backgroundColor:statusColors[p.crm_status]?.bg||'#f4f5f7',color:statusColors[p.crm_status]?.text||'#8a93a2'}}>{p.crm_status||'prospect'}</span></td>
+      </tr>)}</tbody></table></div></div>)
 
-  const kanbanStatuses = ['prospect', 'à contacter', 'à relancer', 'en cours', 'client actif', 'inactif']
-  const kanbanGroups = {}
-  kanbanStatuses.forEach(s => { kanbanGroups[s] = processedPartners.filter(p => (p.crm_status || 'prospect') === s) })
+  const kanbanStatuses = ['prospect','à contacter','à relancer','en cours','client actif','inactif']
+  const kanbanGroups = {}; kanbanStatuses.forEach(s=>{kanbanGroups[s]=processedPartners.filter(p=>(p.crm_status||'prospect')===s)})
 
-  const renderKanban = () => (
-    <div className="flex gap-4 overflow-x-auto pb-4" style={{ minHeight: '400px' }}>
-      {kanbanStatuses.map(status => (
-        <div key={status} className="flex-shrink-0" style={{ width: '260px' }}>
-          <div className="flex items-center gap-2 mb-3 px-1">
-            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: statusColors[status]?.text || '#8a93a2' }} />
-            <p className="text-sm font-semibold" style={{ color: '#1a2b4a' }}>{status}</p>
-            <span className="text-xs px-1.5 py-0.5 rounded-md ml-auto" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>{kanbanGroups[status].length}</span>
-          </div>
-          <div className="flex flex-col gap-2">
-            {kanbanGroups[status].map(p => (
-              <div key={p.id} onClick={() => setSelectedPartner(p)} className="bg-white rounded-2xl p-4 cursor-pointer transition-all hover:shadow-md" style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ backgroundColor: '#2BBFB3' }}>{p.name?.[0]}</div>
-                  <p className="text-sm font-semibold truncate" style={{ color: '#1a2b4a' }}>{p.name}</p>
-                </div>
-                {(p.contact_firstname || p.contact_lastname) && <p className="text-xs truncate" style={{ color: '#8a93a2' }}>{p.contact_firstname} {p.contact_lastname}</p>}
-                {p.email_contact && <p className="text-xs truncate mt-0.5" style={{ color: '#2BBFB3' }}>{p.email_contact}</p>}
-                <div className="flex items-center gap-1 mt-2"><span className="text-xs px-2 py-0.5 rounded-md" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>{p.partner_type || 'entreprise'}</span></div>
-              </div>
-            ))}
-            {kanbanGroups[status].length === 0 && <div className="rounded-2xl p-4 text-center" style={{ backgroundColor: '#f4f5f7' }}><p className="text-xs" style={{ color: '#8a93a2' }}>Aucun</p></div>}
-          </div>
+  const renderKanban = () => (<div className="flex gap-4 overflow-x-auto pb-4" style={{minHeight:'400px'}}>{kanbanStatuses.map(s=>(
+    <div key={s} className="flex-shrink-0" style={{width:'260px'}}>
+      <div className="flex items-center gap-2 mb-3 px-1"><div className="w-3 h-3 rounded-full" style={{backgroundColor:statusColors[s]?.text||'#8a93a2'}} /><p className="text-sm font-semibold" style={{color:'#1a2b4a'}}>{s}</p><span className="text-xs px-1.5 py-0.5 rounded-md ml-auto" style={{backgroundColor:'#f4f5f7',color:'#8a93a2'}}>{kanbanGroups[s].length}</span></div>
+      <div className="flex flex-col gap-2">{kanbanGroups[s].map(p=>(
+        <div key={p.id} onClick={()=>setSelectedPartner(p)} className="bg-white rounded-2xl p-4 cursor-pointer hover:shadow-md" style={{boxShadow:'0 2px 8px rgba(0,0,0,0.04)'}}>
+          <div className="flex items-center gap-2 mb-2"><div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{backgroundColor:'#2BBFB3'}}>{p.name?.[0]}</div><p className="text-sm font-semibold truncate" style={{color:'#1a2b4a'}}>{p.name}</p></div>
+          {p.email_contact&&<p className="text-xs truncate" style={{color:'#2BBFB3'}}>{p.email_contact}</p>}
         </div>
-      ))}
-    </div>
-  )
+      ))}{kanbanGroups[s].length===0&&<div className="rounded-2xl p-4 text-center" style={{backgroundColor:'#f4f5f7'}}><p className="text-xs" style={{color:'#8a93a2'}}>Aucun</p></div>}</div>
+    </div>))}</div>)
 
-  const renderGrouped = renderFn => {
-    if (groupBy === 'none') return renderFn(processedPartners)
-    return (
-      <div className="flex flex-col gap-6">
-        {Object.entries(groupedPartners).map(([groupName, items]) => (
-          <div key={groupName}>
-            <button onClick={() => toggleGroup(groupName)} className="flex items-center gap-2 mb-3 w-full text-left">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ transform: collapsedGroups[groupName] ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
-                <path d="M3 4.5L6 7.5L9 4.5" stroke="#8a93a2" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              <span className="text-xs px-2 py-1 rounded-lg font-semibold" style={{
-                backgroundColor: groupBy === 'crm_status' ? (statusColors[groupName]?.bg || '#f4f5f7') : '#f4f5f7',
-                color: groupBy === 'crm_status' ? (statusColors[groupName]?.text || '#8a93a2') : '#8a93a2',
-              }}>{groupName}</span>
-              <span className="text-xs" style={{ color: '#8a93a2' }}>{items.length}</span>
-            </button>
-            {!collapsedGroups[groupName] && renderFn(items)}
-          </div>
-        ))}
-      </div>
-    )
+  const renderGrouped = fn => {
+    if(groupBy==='none') return fn(processedPartners)
+    return <div className="flex flex-col gap-6">{Object.entries(groupedPartners).map(([name,items])=>(
+      <div key={name}><button onClick={()=>toggleGroup(name)} className="flex items-center gap-2 mb-3 w-full text-left">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{transform:collapsedGroups[name]?'rotate(-90deg)':'rotate(0deg)',transition:'transform 0.2s'}}><path d="M3 4.5L6 7.5L9 4.5" stroke="#8a93a2" strokeWidth="1.5" strokeLinecap="round"/></svg>
+        <span className="text-xs px-2 py-1 rounded-lg font-semibold" style={{backgroundColor:groupBy==='crm_status'?(statusColors[name]?.bg||'#f4f5f7'):'#f4f5f7',color:groupBy==='crm_status'?(statusColors[name]?.text||'#8a93a2'):'#8a93a2'}}>{name}</span>
+        <span className="text-xs" style={{color:'#8a93a2'}}>{items.length}</span>
+      </button>{!collapsedGroups[name]&&fn(items)}</div>
+    ))}</div>
   }
 
   return (
     <div>
-      {selectedPartner && <PartnerModal partner={selectedPartner} onClose={() => setSelectedPartner(null)} onUpdate={handleUpdate} />}
-      {showImport && <CSVImportModal onClose={() => setShowImport(false)} onImport={handleCSVImport} />}
+      {selectedPartner && <PartnerModal partner={selectedPartner} onClose={()=>setSelectedPartner(null)} onUpdate={handleUpdate} />}
+      {showImport && <CSVImportModal onClose={()=>setShowImport(false)} onImport={imported=>setPartners(p=>[...p,...imported])} />}
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 md:mb-6 gap-3">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Partenaires</h1>
-          <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>{processedPartners.length} partenaire{processedPartners.length > 1 ? 's' : ''}{search && ` (filtré${processedPartners.length > 1 ? 's' : ''})`}</p>
-        </div>
+        <div><h1 className="text-xl md:text-2xl font-bold" style={{color:'#1a2b4a'}}>Partenaires</h1><p className="text-sm mt-1" style={{color:'#8a93a2'}}>{processedPartners.length} partenaire{processedPartners.length>1?'s':''}</p></div>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={() => setShowImport(true)} className="px-4 py-3 rounded-2xl text-sm font-semibold flex-1 sm:flex-initial" style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }}>📄 Importer CSV</button>
-          <button onClick={() => setShowForm(!showForm)} className="px-5 py-3 rounded-2xl text-white text-sm font-semibold flex-1 sm:flex-initial" style={{ backgroundColor: '#2BBFB3' }}>+ Ajouter</button>
+          <button onClick={()=>setShowImport(true)} className="px-4 py-3 rounded-2xl text-sm font-semibold flex-1 sm:flex-initial" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}}>📄 Importer CSV</button>
+          <button onClick={()=>setShowForm(!showForm)} className="px-5 py-3 rounded-2xl text-white text-sm font-semibold flex-1 sm:flex-initial" style={{backgroundColor:'#2BBFB3'}}>+ Ajouter</button>
         </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 mb-4 md:mb-6">
-        <div className="flex-1">
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher par nom, contact, email..." className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }} />
-        </div>
-        <div className="flex rounded-xl overflow-hidden flex-shrink-0" style={{ border: '1px solid #f4f5f7' }}>
-          {[{ key: 'cards', icon: '☰', label: 'Cartes' },{ key: 'table', icon: '▦', label: 'Tableau' },{ key: 'kanban', icon: '◫', label: 'Kanban' }].map(v => (
-            <button key={v.key} onClick={() => { setView(v.key); if (v.key === 'kanban') setGroupBy('none') }}
-              className="px-3 py-2 text-xs font-medium transition-all" title={v.label}
-              style={{ backgroundColor: view === v.key ? '#2BBFB3' : 'white', color: view === v.key ? 'white' : '#8a93a2' }}>
-              {v.icon} <span className="hidden sm:inline ml-1">{v.label}</span>
-            </button>
-          ))}
-        </div>
-        {view !== 'kanban' && (
-          <select value={groupBy} onChange={e => setGroupBy(e.target.value)} className="px-3 py-2 rounded-xl text-sm outline-none flex-shrink-0" style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }}>
-            <option value="none">Pas de groupe</option><option value="crm_status">Grouper par statut</option><option value="partner_type">Grouper par type</option>
-          </select>
-        )}
+        <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher..." className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}} />
+        <div className="flex rounded-xl overflow-hidden flex-shrink-0" style={{border:'1px solid #f4f5f7'}}>{[{k:'cards',i:'☰',l:'Cartes'},{k:'table',i:'▦',l:'Tableau'},{k:'kanban',i:'◫',l:'Kanban'}].map(v=><button key={v.k} onClick={()=>{setView(v.k);if(v.k==='kanban')setGroupBy('none')}} className="px-3 py-2 text-xs font-medium" style={{backgroundColor:view===v.k?'#2BBFB3':'white',color:view===v.k?'white':'#8a93a2'}}>{v.i}<span className="hidden sm:inline ml-1">{v.l}</span></button>)}</div>
+        {view!=='kanban'&&<select value={groupBy} onChange={e=>setGroupBy(e.target.value)} className="px-3 py-2 rounded-xl text-sm outline-none" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}}><option value="none">Pas de groupe</option><option value="crm_status">Par statut</option><option value="partner_type">Par type</option></select>}
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-8 mb-6" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.08)' }}>
-          <h2 className="font-bold text-lg mb-6" style={{ color: '#1a2b4a' }}>Nouveau partenaire</h2>
+        <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-8 mb-6" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.08)'}}>
+          <h2 className="font-bold text-lg mb-6" style={{color:'#1a2b4a'}}>Nouveau partenaire</h2>
           <form onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-              {[{ name: 'name', placeholder: "Nom de l'organisation *", required: true },{ name: 'contact_firstname', placeholder: 'Prénom contact' },{ name: 'contact_lastname', placeholder: 'Nom contact' },{ name: 'contact_role', placeholder: 'Poste (ex: DRH)' },{ name: 'email_contact', placeholder: 'Email contact', type: 'email' },{ name: 'phone', placeholder: 'Téléphone' }].map(field => (
-                <input key={field.name} name={field.name} value={form[field.name]} onChange={handleChange} required={field.required} placeholder={field.placeholder} type={field.type || 'text'} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{ backgroundColor: '#f4f5f7' }} />
-              ))}
-              <select name="partner_type" value={form.partner_type} onChange={handleChange} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{ backgroundColor: '#f4f5f7' }}>
-                <option value="entreprise">Entreprise</option><option value="mutuelle">Mutuelle</option><option value="prospect">Prospect</option>
-              </select>
-              <select name="crm_status" value={form.crm_status} onChange={handleChange} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{ backgroundColor: '#f4f5f7' }}>
-                <option value="prospect">Prospect</option><option value="à contacter">À contacter</option><option value="à relancer">À relancer</option><option value="en cours">En cours</option><option value="client actif">Client actif</option><option value="inactif">Inactif</option>
-              </select>
+              {[{n:'name',p:"Nom *",r:true},{n:'contact_firstname',p:'Prénom'},{n:'contact_lastname',p:'Nom contact'},{n:'contact_role',p:'Poste'},{n:'email_contact',p:'Email',t:'email'},{n:'phone',p:'Téléphone'}].map(f=><input key={f.n} name={f.n} value={form[f.n]} onChange={handleChange} required={f.r} placeholder={f.p} type={f.t||'text'} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7'}} />)}
+              <select name="partner_type" value={form.partner_type} onChange={handleChange} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7'}}><option value="entreprise">Entreprise</option><option value="mutuelle">Mutuelle</option><option value="prospect">Prospect</option></select>
+              <select name="crm_status" value={form.crm_status} onChange={handleChange} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7'}}><option value="prospect">Prospect</option><option value="à contacter">À contacter</option><option value="à relancer">À relancer</option><option value="en cours">En cours</option><option value="client actif">Client actif</option><option value="inactif">Inactif</option></select>
             </div>
-            <textarea name="notes_internes" value={form.notes_internes} onChange={handleChange} placeholder="Notes internes..." rows={3} className="w-full px-4 py-3 rounded-2xl text-sm outline-none resize-none mb-6" style={{ backgroundColor: '#f4f5f7' }} />
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button type="submit" className="px-6 py-3 rounded-2xl text-white text-sm font-semibold" style={{ backgroundColor: '#2BBFB3' }}>Enregistrer</button>
-              <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 rounded-2xl text-sm font-semibold" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>Annuler</button>
-            </div>
+            <textarea name="notes_internes" value={form.notes_internes} onChange={handleChange} placeholder="Notes..." rows={3} className="w-full px-4 py-3 rounded-2xl text-sm outline-none resize-none mb-6" style={{backgroundColor:'#f4f5f7'}} />
+            <div className="flex flex-col sm:flex-row gap-3"><button type="submit" className="px-6 py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor:'#2BBFB3'}}>Enregistrer</button><button type="button" onClick={()=>setShowForm(false)} className="px-6 py-3 rounded-2xl text-sm font-semibold" style={{backgroundColor:'#f4f5f7',color:'#8a93a2'}}>Annuler</button></div>
           </form>
         </div>
       )}
 
-      {processedPartners.length === 0 && !showForm ? (
-        <div className="bg-white rounded-3xl p-12 text-center" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-          <span className="text-4xl">🏢</span>
-          <p className="font-bold text-lg mt-4" style={{ color: '#1a2b4a' }}>{search ? 'Aucun résultat' : 'Aucun partenaire'}</p>
-          <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>{search ? 'Essayez un autre terme de recherche' : 'Cliquez sur "Ajouter" ou "Importer CSV" pour commencer'}</p>
-        </div>
-      ) : (
-        <>{view === 'kanban' && renderKanban()}{view === 'cards' && renderGrouped(renderCards)}{view === 'table' && renderGrouped(renderTable)}</>
-      )}
+      {processedPartners.length===0&&!showForm ? (
+        <div className="bg-white rounded-3xl p-12 text-center" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}><span className="text-4xl">🏢</span><p className="font-bold text-lg mt-4" style={{color:'#1a2b4a'}}>{search?'Aucun résultat':'Aucun partenaire'}</p></div>
+      ) : (<>{view==='kanban'&&renderKanban()}{view==='cards'&&renderGrouped(renderCards)}{view==='table'&&renderGrouped(renderTable)}</>)}
     </div>
   )
 }
