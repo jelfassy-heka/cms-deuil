@@ -5,6 +5,7 @@ import CRM from './CRM'
 import Users from './Users'
 import CodeGenerator from './CodeGenerator'
 import Requests from './Requests'
+import AdminAccounts from './AdminAccounts'
 const stats = [
   { label: 'Partenaires actifs', value: '0', color: '#2BBFB3' },
   { label: 'Codes générés', value: '0', color: '#1a2b4a' },
@@ -18,6 +19,7 @@ const navItems = [
   { label: 'CRM', icon: '📊', path: 'crm' },
   { label: 'Utilisateurs', icon: '👥', path: 'users' },
   { label: 'Générateur de codes', icon: '🔑', path: 'codes' },
+  { label: 'Gestion des accès', icon: '🔐', path: 'accounts' },
 ]
 
 export default function AdminDashboard() {
@@ -252,6 +254,7 @@ export default function AdminDashboard() {
         {activePage === 'users' && <Users />}
         {activePage === 'codes' && <CodeGenerator />}
         {activePage === 'requests' && <Requests />}
+        {activePage === 'accounts' && <AdminAccounts />}
       </div>
     </div>
   )
