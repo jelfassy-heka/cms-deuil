@@ -9,6 +9,9 @@ import CodeGenerator from './CodeGenerator'
 import Requests from './Requests'
 import AdminAccounts from './AdminAccounts'
 import ActivityLog from './ActivityLog'
+import AllBeneficiaries from './AllBeneficiaries'
+import Analytics from './Analytics'
+import BulkCodeSend from './BulkCodeSend'
 import NotificationCenter from './NotificationCenter'
 import GlobalSearch from './GlobalSearch'
 
@@ -18,8 +21,11 @@ const navItems = [
   { label: 'Demandes', icon: 'requests', path: 'requests' },
   { label: 'CRM', icon: 'crm', path: 'crm' },
   { label: 'Utilisateurs', icon: 'users', path: 'users' },
+  { label: 'Tous les salariés', icon: 'beneficiaries', path: 'all-beneficiaries' },
   { label: 'Générateur de codes', icon: 'codes', path: 'codes' },
+  { label: 'Envoi en masse', icon: 'bulk-send', path: 'bulk-send' },
   { label: 'Gestion des accès', icon: 'accounts', path: 'accounts' },
+  { label: 'Analytics', icon: 'analytics', path: 'analytics' },
   { label: 'Journal d\'activité', icon: 'activity', path: 'activity-log' },
 ]
 
@@ -80,6 +86,27 @@ function NavIcon({ icon, active }) {
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
           <path d="M2 2v12h12" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
           <path d="M5 10l3-3 2 2 4-5" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      )
+    case 'beneficiaries':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M6 7a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM1 14v-1.5A2.5 2.5 0 0 1 3.5 10h5A2.5 2.5 0 0 1 11 12.5V14" stroke={color} strokeWidth="1.3" strokeLinecap="round"/>
+          <path d="M12 2v5M14.5 4.5h-5" stroke={color} strokeWidth="1.3" strokeLinecap="round"/>
+        </svg>
+      )
+    case 'analytics':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <rect x="1" y="9" width="3" height="5" rx="1" fill={color}/>
+          <rect x="6" y="5" width="3" height="9" rx="1" fill={color}/>
+          <rect x="11" y="2" width="3" height="12" rx="1" fill={color}/>
+        </svg>
+      )
+    case 'bulk-send':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M2 3l12 5-12 5V9l8-1-8-1V3z" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       )
     default:
@@ -434,6 +461,9 @@ export default function AdminDashboard() {
         {activePage === 'requests' && <Requests />}
         {activePage === 'accounts' && <AdminAccounts />}
         {activePage === 'activity-log' && <ActivityLog />}
+        {activePage === 'all-beneficiaries' && <AllBeneficiaries />}
+        {activePage === 'analytics' && <Analytics />}
+        {activePage === 'bulk-send' && <BulkCodeSend />}
       </div>
     </div>
   )
