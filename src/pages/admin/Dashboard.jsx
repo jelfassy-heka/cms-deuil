@@ -1,51 +1,181 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import xano from '../../lib/xano'
+import { SparklineChart, buildSparklineData } from '../../components/SharedUI'
 import Partners from './Partners'
 import CRM from './CRM'
 import Users from './Users'
 import CodeGenerator from './CodeGenerator'
 import Requests from './Requests'
 import AdminAccounts from './AdminAccounts'
+import ActivityLog from './ActivityLog'
+import NotificationCenter from './NotificationCenter'
+import GlobalSearch from './GlobalSearch'
 
 const navItems = [
-  { label: 'Tableau de bord', icon: '⊞', path: 'dashboard' },
-  { label: 'Partenaires', icon: '🏢', path: 'partners' },
-  { label: 'Demandes', icon: '📋', path: 'requests' },
-  { label: 'CRM', icon: '📊', path: 'crm' },
-  { label: 'Utilisateurs', icon: '👥', path: 'users' },
-  { label: 'Générateur de codes', icon: '🔑', path: 'codes' },
-  { label: 'Gestion des accès', icon: '🔐', path: 'accounts' },
+  { label: 'Tableau de bord', icon: 'dashboard', path: 'dashboard' },
+  { label: 'Partenaires', icon: 'partners', path: 'partners' },
+  { label: 'Demandes', icon: 'requests', path: 'requests' },
+  { label: 'CRM', icon: 'crm', path: 'crm' },
+  { label: 'Utilisateurs', icon: 'users', path: 'users' },
+  { label: 'Générateur de codes', icon: 'codes', path: 'codes' },
+  { label: 'Gestion des accès', icon: 'accounts', path: 'accounts' },
+  { label: 'Journal d\'activité', icon: 'activity', path: 'activity-log' },
 ]
+
+// ─── Icônes SVG nav ───────────────────────────────
+function NavIcon({ icon, active }) {
+  const color = active ? 'white' : '#8a93a2'
+  switch (icon) {
+    case 'dashboard':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <rect x="1" y="1" width="6" height="6" rx="1.5" fill={color}/>
+          <rect x="9" y="1" width="6" height="6" rx="1.5" fill={color}/>
+          <rect x="1" y="9" width="6" height="6" rx="1.5" fill={color}/>
+          <rect x="9" y="9" width="6" height="6" rx="1.5" fill={color}/>
+        </svg>
+      )
+    case 'partners':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M11 14v-1.5A2.5 2.5 0 0 0 8.5 10h-5A2.5 2.5 0 0 0 1 12.5V14M8 4.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0ZM13 7v4M15 9h-4" stroke={color} strokeWidth="1.3" strokeLinecap="round"/>
+        </svg>
+      )
+    case 'requests':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M2 2h12v10H2V2ZM5 6h6M5 8.5h4" stroke={color} strokeWidth="1.3" strokeLinecap="round"/>
+        </svg>
+      )
+    case 'crm':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M1 13L4 9l3 2 3-4 4 5M1 11V3h14v10" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      )
+    case 'users':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M11 14v-1.5A2.5 2.5 0 0 0 8.5 10h-5A2.5 2.5 0 0 0 1 12.5V14M9.5 1a2.5 2.5 0 0 1 0 5M12 14v-1.5a2.5 2.5 0 0 0-1.5-2.3M6 7a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Z" stroke={color} strokeWidth="1.3" strokeLinecap="round"/>
+        </svg>
+      )
+    case 'codes':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="3" stroke={color} strokeWidth="1.3"/>
+          <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M3.2 12.8l1.4-1.4M11.4 4.6l1.4-1.4" stroke={color} strokeWidth="1.3" strokeLinecap="round"/>
+        </svg>
+      )
+    case 'accounts':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <rect x="3" y="7" width="10" height="7" rx="2" stroke={color} strokeWidth="1.3"/>
+          <path d="M5 7V5a3 3 0 0 1 6 0v2" stroke={color} strokeWidth="1.3" strokeLinecap="round"/>
+          <circle cx="8" cy="10.5" r="1" fill={color}/>
+        </svg>
+      )
+    case 'activity':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M2 2v12h12" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M5 10l3-3 2 2 4-5" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      )
+    default:
+      return null
+  }
+}
 
 export default function AdminDashboard() {
   const [activePage, setActivePage] = useState('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
-  const [stats, setStats] = useState({ partners: 0, codes: 0, pending: 0, users: 0, beneficiaries: 0 })
+  const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
 
-  // Fetch dashboard stats
+  // ─── Datasets centralisés ─────────────────────────
+  const [datasets, setDatasets] = useState({
+    partners: [],
+    codes: [],
+    requests: [],
+    users: [],
+    contracts: [],
+    beneficiaries: [],
+    members: [],
+  })
+
+  // Stats calculées depuis les datasets
+  const stats = useMemo(() => ({
+    partners: datasets.partners.filter(p => p.crm_status === 'client actif').length,
+    codes: datasets.codes.length,
+    pending: datasets.requests.filter(r => r.request_status === 'pending').length,
+    users: datasets.users.length,
+  }), [datasets])
+
+  // Sparklines calculées depuis les datasets
+  const sparklines = useMemo(() => ({
+    partners: buildSparklineData(datasets.partners.filter(p => p.crm_status === 'client actif'), 'created_at', 7),
+    codes: buildSparklineData(datasets.codes, 'created_at', 7),
+    requests: buildSparklineData(datasets.requests.filter(r => r.request_status === 'pending'), 'created_at', 7),
+    users: buildSparklineData(datasets.users, 'created_at', 7),
+  }), [datasets])
+
+  // Deltas 7 jours
+  const deltas = useMemo(() => {
+    const calcDelta = (items, dateField = 'created_at', filterFn = null) => {
+      const now = new Date()
+      const d7 = new Date(now - 7 * 24 * 60 * 60 * 1000)
+      const filtered = filterFn ? items.filter(filterFn) : items
+      const recent = filtered.filter(i => i[dateField] && new Date(i[dateField]) > d7).length
+      return recent
+    }
+    return {
+      partners: calcDelta(datasets.partners, 'created_at', p => p.crm_status === 'client actif'),
+      codes: calcDelta(datasets.codes),
+      requests: calcDelta(datasets.requests, 'created_at', r => r.request_status === 'pending'),
+      users: calcDelta(datasets.users),
+    }
+  }, [datasets])
+
+  // Fetch all datasets
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchAll = async () => {
+      setLoading(true)
       try {
-        const [partners, codes, requests, users] = await Promise.all([
+        const [partners, codes, requests, users, contracts, beneficiaries, members] = await Promise.all([
           xano.getAll('partners'),
           xano.getAll('plan-activation-code'),
           xano.getAll('code_request'),
           xano.getAll('users'),
+          xano.getAll('contracts').catch(() => []),
+          xano.getAll('beneficiaries').catch(() => []),
+          xano.getAll('partner_members').catch(() => []),
         ])
-        setStats({
-          partners: partners.filter(p => p.crm_status === 'client actif').length,
-          codes: codes.length,
-          pending: requests.filter(r => r.request_status === 'pending').length,
-          users: users.length,
-          beneficiaries: 0,
-        })
-      } catch (err) { console.error('Erreur stats:', err) }
+        setDatasets({ partners, codes, requests, users, contracts, beneficiaries, members })
+      } catch (err) {
+        console.error('Erreur chargement données:', err)
+      } finally {
+        setLoading(false)
+      }
     }
-    fetchStats()
+    fetchAll()
+  }, [])
+
+  // Polling notifications (refresh datasets toutes les 60s)
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const [requests, users, codes] = await Promise.all([
+          xano.getAll('code_request'),
+          xano.getAll('users'),
+          xano.getAll('plan-activation-code'),
+        ])
+        setDatasets(prev => ({ ...prev, requests, users, codes }))
+      } catch (err) { /* silencieux */ }
+    }, 60000)
+    return () => clearInterval(interval)
   }, [])
 
   // Détecter mobile et fermer sidebar automatiquement
@@ -64,6 +194,20 @@ export default function AdminDashboard() {
     setActivePage(path)
     if (isMobile) setMobileMenuOpen(false)
   }
+
+  // Callback pour la recherche globale
+  const handleSearchSelect = (action, id, raw, sourceKey) => {
+    setActivePage(action)
+    // On pourrait ouvrir une modale ici selon le type
+  }
+
+  // ─── Stat cards config ────────────────────────────
+  const statCards = [
+    { key: 'partners', label: 'Partenaires actifs', value: stats.partners, delta: deltas.partners, color: '#2BBFB3', sparkline: sparklines.partners },
+    { key: 'codes', label: 'Codes générés', value: stats.codes, delta: deltas.codes, color: '#1a2b4a', sparkline: sparklines.codes },
+    { key: 'requests', label: 'Demandes en attente', value: stats.pending, delta: deltas.requests, color: '#f59e0b', sparkline: sparklines.requests },
+    { key: 'users', label: 'Utilisateurs app', value: stats.users, delta: deltas.users, color: '#8b5cf6', sparkline: sparklines.users },
+  ]
 
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: '#f4f5f7' }}>
@@ -93,9 +237,9 @@ export default function AdminDashboard() {
             </button>
             <img src="/logo.png" alt="Héka" className="h-8 rounded-lg" />
           </div>
-          <p className="text-sm font-semibold" style={{ color: '#1a2b4a' }}>
-            {navItems.find(n => n.path === activePage)?.label || 'Tableau de bord'}
-          </p>
+          <div className="flex items-center gap-2">
+            <NotificationCenter datasets={datasets} onNavigate={handleNavClick} />
+          </div>
         </div>
       )}
 
@@ -167,41 +311,7 @@ export default function AdminDashboard() {
                   borderRadius: '8px',
                   backgroundColor: activePage === item.path ? '#2BBFB3' : '#f4f5f7',
                 }}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  {item.path === 'dashboard' && (
-                    <>
-                      <rect x="1" y="1" width="6" height="6" rx="1.5" fill={activePage === item.path ? 'white' : '#8a93a2'}/>
-                      <rect x="9" y="1" width="6" height="6" rx="1.5" fill={activePage === item.path ? 'white' : '#8a93a2'}/>
-                      <rect x="1" y="9" width="6" height="6" rx="1.5" fill={activePage === item.path ? 'white' : '#8a93a2'}/>
-                      <rect x="9" y="9" width="6" height="6" rx="1.5" fill={activePage === item.path ? 'white' : '#8a93a2'}/>
-                    </>
-                  )}
-                  {item.path === 'partners' && (
-                    <path d="M11 14v-1.5A2.5 2.5 0 0 0 8.5 10h-5A2.5 2.5 0 0 0 1 12.5V14M8 4.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0ZM13 7v4M15 9h-4" stroke={activePage === item.path ? 'white' : '#8a93a2'} strokeWidth="1.3" strokeLinecap="round"/>
-                  )}
-                  {item.path === 'codes' && (
-                    <>
-                      <rect x="1" y="5" width="10" height="7" rx="2" stroke={activePage === item.path ? 'white' : '#8a93a2'} strokeWidth="1.3"/>
-                      <path d="M11 7.5V6a4 4 0 0 1 4 4" stroke={activePage === item.path ? 'white' : '#8a93a2'} strokeWidth="1.3" strokeLinecap="round"/>
-                      <circle cx="6" cy="8.5" r="1.2" fill={activePage === item.path ? 'white' : '#8a93a2'}/>
-                    </>
-                  )}
-                  {item.path === 'requests' && (
-                    <path d="M2 2h12v10H2V2ZM5 6h6M5 8.5h4" stroke={activePage === item.path ? 'white' : '#8a93a2'} strokeWidth="1.3" strokeLinecap="round"/>
-                  )}
-                  {item.path === 'crm' && (
-                    <path d="M1 13L4 9l3 2 3-4 4 5M1 11V3h14v10" stroke={activePage === item.path ? 'white' : '#8a93a2'} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                  )}
-                  {item.path === 'users' && (
-                    <path d="M11 14v-1.5A2.5 2.5 0 0 0 8.5 10h-5A2.5 2.5 0 0 0 1 12.5V14M9.5 1a2.5 2.5 0 0 1 0 5M12 14v-1.5a2.5 2.5 0 0 0-1.5-2.3M6 7a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Z" stroke={activePage === item.path ? 'white' : '#8a93a2'} strokeWidth="1.3" strokeLinecap="round"/>
-                  )}
-                  {item.path === 'codes' && (
-                    <>
-                      <circle cx="8" cy="8" r="3" stroke={activePage === item.path ? 'white' : '#8a93a2'} strokeWidth="1.3"/>
-                      <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M3.2 12.8l1.4-1.4M11.4 4.6l1.4-1.4" stroke={activePage === item.path ? 'white' : '#8a93a2'} strokeWidth="1.3" strokeLinecap="round"/>
-                      </>
-                  )}
-                </svg>
+                <NavIcon icon={item.icon} active={activePage === item.path} />
               </div>
 
               {/* Label */}
@@ -251,35 +361,153 @@ export default function AdminDashboard() {
       {/* Contenu principal */}
       <div className="flex-1 p-4 md:p-8 overflow-x-hidden"
         style={{ paddingTop: isMobile ? '72px' : undefined }}>
-        {activePage === 'dashboard' && (
-          <>
-            <div className="mb-6 md:mb-8">
+
+        {/* Header desktop avec recherche globale + notifications */}
+        {!isMobile && activePage === 'dashboard' && (
+          <div className="flex items-center justify-between mb-6 md:mb-8">
+            <div>
               <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Tableau de bord</h1>
               <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>Bienvenue dans votre espace de gestion Héka</p>
             </div>
+            <div className="flex items-center gap-3">
+              <GlobalSearch datasets={datasets} onSelect={handleSearchSelect} />
+              <NotificationCenter datasets={datasets} onNavigate={handleNavClick} />
+            </div>
+          </div>
+        )}
+
+        {/* Header pages avec recherche + notifs */}
+        {!isMobile && activePage !== 'dashboard' && (
+          <div className="flex items-center justify-end mb-4 gap-3">
+            <GlobalSearch datasets={datasets} onSelect={handleSearchSelect} />
+            <NotificationCenter datasets={datasets} onNavigate={handleNavClick} />
+          </div>
+        )}
+
+        {/* ─── Dashboard page ──────────────────────── */}
+        {activePage === 'dashboard' && (
+          <>
+            {/* Stat cards avec sparklines */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4 mb-8">
-              {[
-                { label: 'Partenaires actifs', value: stats.partners, color: '#2BBFB3' },
-                { label: 'Codes générés', value: stats.codes, color: '#1a2b4a' },
-                { label: 'Demandes en attente', value: stats.pending, color: '#f59e0b' },
-                { label: 'Utilisateurs app', value: stats.users, color: '#8b5cf6' },
-              ].map(stat => (
-                <div key={stat.label} className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6"
+              {statCards.map(stat => (
+                <div key={stat.key} className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6"
                   style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-                  <p className="text-2xl md:text-3xl font-bold mb-1" style={{ color: stat.color }}>{stat.value}</p>
-                  <p className="text-xs md:text-sm" style={{ color: '#8a93a2' }}>{stat.label}</p>
+                  <div className="flex items-start justify-between mb-1">
+                    <p className="text-2xl md:text-3xl font-bold" style={{ color: stat.color }}>
+                      {loading ? '—' : stat.value}
+                    </p>
+                    {!loading && stat.delta > 0 && (
+                      <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-lg"
+                        style={{ backgroundColor: '#e8f8f7', color: '#2BBFB3' }}>
+                        +{stat.delta}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs md:text-sm mb-2" style={{ color: '#8a93a2' }}>{stat.label}</p>
+                  {!loading && <SparklineChart data={stat.sparkline} color={stat.color} height={32} />}
                 </div>
               ))}
             </div>
+
+            {/* Section activité récente */}
+            <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6"
+              style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-bold" style={{ color: '#1a2b4a' }}>Activité récente</h2>
+                <button
+                  onClick={() => setActivePage('activity-log')}
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg transition-all"
+                  style={{ backgroundColor: '#e8f8f7', color: '#2BBFB3' }}>
+                  Voir tout →
+                </button>
+              </div>
+              <RecentActivity datasets={datasets} />
+            </div>
           </>
         )}
+
+        {/* ─── Pages ───────────────────────────────── */}
         {activePage === 'partners' && <Partners />}
         {activePage === 'crm' && <CRM />}
         {activePage === 'users' && <Users />}
         {activePage === 'codes' && <CodeGenerator />}
         {activePage === 'requests' && <Requests />}
         {activePage === 'accounts' && <AdminAccounts />}
+        {activePage === 'activity-log' && <ActivityLog />}
       </div>
+    </div>
+  )
+}
+
+// ─── Mini composant activité récente (dashboard) ──
+function RecentActivity({ datasets }) {
+  const recentItems = useMemo(() => {
+    const items = []
+
+    // Dernières activités CRM
+    ;(datasets.requests || []).forEach(r => {
+      if (r.created_at) {
+        const statusLabels = { pending: 'en attente', approved: 'approuvée', rejected: 'refusée' }
+        items.push({
+          id: `req-${r.id}`,
+          icon: '📋',
+          label: `Demande ${r.request_type || 'codes'} — ${statusLabels[r.request_status] || r.request_status}`,
+          date: r.created_at,
+        })
+      }
+    })
+
+    // Derniers envois
+    ;(datasets.beneficiaries || []).filter(b => b.sent_at).forEach(b => {
+      items.push({
+        id: `send-${b.id}`,
+        icon: '📧',
+        label: `Code envoyé à ${b.first_name || ''} ${b.last_name || ''} (${b.email || ''})`,
+        date: b.sent_at,
+      })
+    })
+
+    // Nouveaux membres
+    ;(datasets.members || []).forEach(m => {
+      if (m.created_at) {
+        items.push({
+          id: `member-${m.id}`,
+          icon: '👤',
+          label: `Nouveau compte : ${m.user_email}`,
+          date: m.created_at,
+        })
+      }
+    })
+
+    return items
+      .filter(i => i.date)
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 5)
+  }, [datasets])
+
+  if (recentItems.length === 0) {
+    return (
+      <p className="text-sm py-4 text-center" style={{ color: '#8a93a2' }}>
+        Aucune activité récente
+      </p>
+    )
+  }
+
+  return (
+    <div>
+      {recentItems.map((item, idx) => {
+        const date = new Date(item.date)
+        const timeStr = date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+        return (
+          <div key={item.id}
+            className="flex items-center gap-3 py-2.5"
+            style={{ borderBottom: idx < recentItems.length - 1 ? '1px solid #f4f5f7' : 'none' }}>
+            <span className="text-base flex-shrink-0">{item.icon}</span>
+            <p className="text-sm flex-1 truncate" style={{ color: '#1a2b4a' }}>{item.label}</p>
+            <p className="text-xs flex-shrink-0" style={{ color: '#b0b7c3' }}>{timeStr}</p>
+          </div>
+        )
+      })}
     </div>
   )
 }

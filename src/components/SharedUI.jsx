@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { AreaChart, Area, ResponsiveContainer } from 'recharts'
 
 // ─── Toast notification ────────────────────────────
 export function useToast() {
@@ -287,10 +288,78 @@ export function FieldError({ error, touched }) {
   return <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{error}</p>
 }
 
+// ─── Sparkline Chart (Recharts) ───────────────────
+export function SparklineChart({ data = [], color = '#2BBFB3', height = 32 }) {
+  if (!data.length) return null
+  return (
+    <div style={{ width: '100%', height }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+          <defs>
+            <linearGradient id={`spark-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={0.2} />
+              <stop offset="100%" stopColor={color} stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          <Area
+            type="monotone"
+            dataKey="value"
+            stroke={color}
+            strokeWidth={1.5}
+            fill={`url(#spark-${color.replace('#', '')})`}
+            dot={false}
+            activeDot={false}
+            isAnimationActive={false}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+// ─── Sparkline data helper ────────────────────────
+export function buildSparklineData(items, dateField = 'created_at', days = 7) {
+  const now = new Date()
+  const labels = ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam']
+  const result = []
+
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now)
+    d.setDate(d.getDate() - i)
+    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+    const dayEnd = new Date(dayStart)
+    dayEnd.setDate(dayEnd.getDate() + 1)
+
+    const count = items.filter(item => {
+      const itemDate = new Date(item[dateField])
+      return itemDate >= dayStart && itemDate < dayEnd
+    }).length
+
+    result.push({ day: labels[dayStart.getDay()], value: count })
+  }
+
+  return result
+}
+
+// ─── Time ago helper ──────────────────────────────
+export function timeAgo(dateStr) {
+  const now = new Date()
+  const date = new Date(dateStr)
+  const diff = Math.floor((now - date) / 1000)
+
+  if (diff < 60) return "à l'instant"
+  if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`
+  if (diff < 86400) return `il y a ${Math.floor(diff / 3600)}h`
+  if (diff < 604800) return `il y a ${Math.floor(diff / 86400)}j`
+  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+}
+
 // ─── Global styles (add to index.css or inject) ───
 export const globalStyles = `
 @keyframes fade-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 .animate-fade-in { animation: fade-in 0.3s ease-out; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 .animate-pulse { animation: pulse 1.5s ease-in-out infinite; }
+@keyframes slide-down { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+.animate-slide-down { animation: slide-down 0.2s ease-out; }
 `
