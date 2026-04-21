@@ -11,7 +11,6 @@ import AdminAccounts from './AdminAccounts'
 import ActivityLog from './ActivityLog'
 import AllBeneficiaries from './AllBeneficiaries'
 import Analytics from './Analytics'
-import BulkCodeSend from './BulkCodeSend'
 import NotificationCenter from './NotificationCenter'
 import GlobalSearch from './GlobalSearch'
 
@@ -23,7 +22,6 @@ const navItems = [
   { label: 'Utilisateurs', icon: 'users', path: 'users' },
   { label: 'Tous les salariés', icon: 'beneficiaries', path: 'all-beneficiaries' },
   { label: 'Générateur de codes', icon: 'codes', path: 'codes' },
-  { label: 'Envoi en masse', icon: 'bulk-send', path: 'bulk-send' },
   { label: 'Gestion des accès', icon: 'accounts', path: 'accounts' },
   { label: 'Analytics', icon: 'analytics', path: 'analytics' },
   { label: 'Journal d\'activité', icon: 'activity', path: 'activity-log' },
@@ -101,12 +99,6 @@ function NavIcon({ icon, active }) {
           <rect x="1" y="9" width="3" height="5" rx="1" fill={color}/>
           <rect x="6" y="5" width="3" height="9" rx="1" fill={color}/>
           <rect x="11" y="2" width="3" height="12" rx="1" fill={color}/>
-        </svg>
-      )
-    case 'bulk-send':
-      return (
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M2 3l12 5-12 5V9l8-1-8-1V3z" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       )
     default:
@@ -463,7 +455,6 @@ export default function AdminDashboard() {
         {activePage === 'activity-log' && <ActivityLog />}
         {activePage === 'all-beneficiaries' && <AllBeneficiaries />}
         {activePage === 'analytics' && <Analytics />}
-        {activePage === 'bulk-send' && <BulkCodeSend />}
       </div>
     </div>
   )

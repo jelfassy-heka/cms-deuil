@@ -1,9 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, Tooltip } from 'recharts'
 import xano from '../../lib/xano'
 import PartnerCodes from './PartnerCodes'
 import PartnerTeam from './PartnerTeam'
+import PartnerProfile from './PartnerProfile'
+import PartnerHelp from './PartnerHelp'
+import PartnerNotifications from './PartnerNotifications'
 
 const requestTypes = [
   { type:'codes', label:'Demande de codes', icon:'🔑', description:'Demander des codes supplémentaires', color:'#2BBFB3' },
@@ -34,12 +38,23 @@ function RequestForm({ type, onSubmit, onCancel }) {
 
 const statusLabels = { pending:{label:'En attente',bg:'#fef3c7',text:'#d97706'}, approved:{label:'Approuvée',bg:'#e8f8f7',text:'#2BBFB3'}, rejected:{label:'Refusée',bg:'#fee2e2',text:'#ef4444'}, in_progress:{label:'En cours',bg:'#e8f0fe',text:'#1a2b4a'} }
 
+// ─── Mini tooltip pour les charts ─────────────────
+function ChartTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="bg-white rounded-xl px-3 py-2" style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.12)', border: '1px solid #f4f5f7' }}>
+      <p className="text-xs" style={{ color: '#1a2b4a' }}><span className="font-medium">{label}</span> : {payload[0]?.value}</p>
+    </div>
+  )
+}
+
 export default function PartnerDashboard() {
   const { user, partnerId, memberRole, signOut } = useAuth()
   const navigate = useNavigate()
   const [codes, setCodes] = useState([])
   const [contract, setContract] = useState(null)
   const [requests, setRequests] = useState([])
+  const [beneficiaries, setBeneficiaries] = useState([])
   const [partnerInfo, setPartnerInfo] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activePage, setActivePage] = useState('dashboard')
@@ -53,13 +68,14 @@ export default function PartnerDashboard() {
     if (!user || !partnerId) { navigate('/login'); return }
     const fetchData = async () => {
       try {
-        const [codesData, contractsData, requestsData, partnerData] = await Promise.all([
+        const [codesData, contractsData, requestsData, partnerData, benefData] = await Promise.all([
           xano.getAll('plan-activation-code', { partnerId }),
           xano.getAll('contracts', { partner_id: partnerId }),
           xano.getAll('code_request', { partner_id: partnerId }),
           xano.getOne('partners', partnerId),
+          xano.getAll('beneficiaries', { partner_id: partnerId }),
         ])
-        setCodes(codesData); setContract(contractsData[0] || null); setRequests(requestsData); setPartnerInfo(partnerData)
+        setCodes(codesData); setContract(contractsData[0] || null); setRequests(requestsData); setPartnerInfo(partnerData); setBeneficiaries(benefData)
       } catch (err) { console.error('Erreur:', err) }
       finally { setLoading(false) }
     }
@@ -86,6 +102,39 @@ export default function PartnerDashboard() {
   const usageRate = codes.length > 0 ? Math.round((usedCodes / codes.length) * 100) : 0
   const partnerName = partnerInfo?.name || 'Espace partenaire'
 
+  // Données pour le graphique courbe (envois par semaine sur 12 semaines)
+  const sendChartData = useMemo(() => {
+    const now = new Date()
+    const data = []
+    for (let i = 11; i >= 0; i--) {
+      const weekStart = new Date(now - (i + 1) * 7 * 24 * 60 * 60 * 1000)
+      const weekEnd = new Date(now - i * 7 * 24 * 60 * 60 * 1000)
+      const count = beneficiaries.filter(b =>
+        b.sent_at && new Date(b.sent_at) >= weekStart && new Date(b.sent_at) < weekEnd
+      ).length
+      const label = weekStart.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+      data.push({ label, value: count })
+    }
+    return data
+  }, [beneficiaries])
+
+  // Données pour le donut (répartition codes)
+  const donutData = useMemo(() => {
+    const assignedSet = new Set(beneficiaries.filter(b => b.code).map(b => b.code))
+    const sent = codes.filter(c => !c.used && assignedSet.has(c.code)).length
+    const available = codes.length - usedCodes - sent
+    return [
+      { name: 'Disponibles', value: available, color: '#2BBFB3' },
+      { name: 'Envoyés', value: sent, color: '#3b82f6' },
+      { name: 'Utilisés', value: usedCodes, color: '#d1d5db' },
+    ]
+  }, [codes, beneficiaries, usedCodes])
+
+  // Données pour les notifications
+  const notifData = useMemo(() => ({
+    requests, codes, contract, beneficiaries,
+  }), [requests, codes, contract, beneficiaries])
+
   const navItems = [
     { label:'Tableau de bord', icon:'⊞', path:'dashboard' },
     { label:'Mes codes', icon:'🔑', path:'codes' },
@@ -93,6 +142,8 @@ export default function PartnerDashboard() {
     { label:'Mon contrat', icon:'📄', path:'contract' },
     { label:'Mes demandes', icon:'📋', path:'requests' },
     { label:'Nouvelle demande', icon:'✉️', path:'new_request' },
+    { label:'Mon profil', icon:'👤', path:'profile' },
+    { label:'Aide', icon:'❓', path:'help' },
   ]
 
   if (loading) return <div className="flex items-center justify-center min-h-screen"><p style={{color:'#8a93a2'}}>Chargement...</p></div>
@@ -108,14 +159,15 @@ export default function PartnerDashboard() {
             </button>
             <img src="/logo.png" alt="Héka" className="h-8 rounded-lg" />
           </div>
-          <p className="text-sm font-semibold" style={{color:'#1a2b4a'}}>{navItems.find(n=>n.path===activePage)?.label||'Tableau de bord'}</p>
+          <div className="flex items-center gap-2">
+            <PartnerNotifications data={notifData} onNavigate={handleNavClick} />
+          </div>
         </div>
       )}
 
       {/* Sidebar */}
       <div className={`bg-white flex flex-col py-6 px-4 transition-all duration-300 ${isMobile?`fixed top-0 left-0 bottom-0 z-50 ${mobileMenuOpen?'translate-x-0':'-translate-x-full'}`:'relative'}`} style={{width:isMobile?'280px':'256px',boxShadow:'2px 0 12px rgba(43,191,179,0.06)'}}>
 
-        {/* Logo + partner name */}
         <div className="px-4 mb-6">
           <div className="flex items-center justify-between">
             <img src="/logo.png" alt="Héka" className="h-10 rounded-xl" />
@@ -123,22 +175,22 @@ export default function PartnerDashboard() {
           </div>
         </div>
 
-        {/* Partner card in sidebar */}
+        {/* Partner card + notifications desktop */}
         <div className="px-2 mb-6">
           <div className="rounded-2xl p-3" style={{backgroundColor:'#e8f8f7'}}>
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0" style={{backgroundColor:'#2BBFB3'}}>
                 {partnerName[0]}
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold truncate" style={{color:'#1a2b4a'}}>{partnerName}</p>
                 <p className="text-xs truncate" style={{color:'#8a93a2'}}>{partnerInfo?.partner_type || 'entreprise'}</p>
               </div>
+              {!isMobile && <PartnerNotifications data={notifData} onNavigate={handleNavClick} />}
             </div>
           </div>
         </div>
 
-        {/* Nav */}
         <nav className="flex-1">
           {navItems.map(item=>(
             <button key={item.path} onClick={()=>handleNavClick(item.path)}
@@ -149,7 +201,6 @@ export default function PartnerDashboard() {
           ))}
         </nav>
 
-        {/* User card + logout */}
         <div className="px-2 mb-2">
           <div className="rounded-2xl p-3" style={{backgroundColor:'#f4f5f7'}}>
             <div className="flex items-center gap-3">
@@ -173,10 +224,9 @@ export default function PartnerDashboard() {
       {/* Contenu */}
       <div className="flex-1 p-4 md:p-8 overflow-x-hidden" style={{paddingTop:isMobile?'72px':undefined}}>
 
-        {/* Dashboard */}
+        {/* ─── Dashboard ─── */}
         {activePage==='dashboard'&&(
           <div>
-            {/* Welcome header with partner name */}
             <div className="mb-6">
               <h1 className="text-xl md:text-2xl font-bold" style={{color:'#1a2b4a'}}>Bonjour 👋</h1>
               <p className="text-sm mt-1" style={{color:'#8a93a2'}}>
@@ -201,12 +251,12 @@ export default function PartnerDashboard() {
               </div>
               <div className="flex gap-4">
                 <div className="text-center">
-                  <p className="text-xl font-bold" style={{color:'#2BBFB3'}}>{unusedCodes}</p>
-                  <p className="text-xs" style={{color:'#8a93a2'}}>Codes dispo</p>
+                  <p className="text-xl font-bold" style={{color:'#2BBFB3'}}>{codes.length}</p>
+                  <p className="text-xs" style={{color:'#8a93a2'}}>Codes</p>
                 </div>
                 <div className="text-center" style={{borderLeft:'1px solid #f4f5f7', paddingLeft:'16px'}}>
-                  <p className="text-xl font-bold" style={{color:'#1a2b4a'}}>{usedCodes}</p>
-                  <p className="text-xs" style={{color:'#8a93a2'}}>Utilisés</p>
+                  <p className="text-xl font-bold" style={{color:'#1a2b4a'}}>{unusedCodes}</p>
+                  <p className="text-xs" style={{color:'#8a93a2'}}>Codes dispo</p>
                 </div>
                 <div className="text-center" style={{borderLeft:'1px solid #f4f5f7', paddingLeft:'16px'}}>
                   <p className="text-xl font-bold" style={{color:usageRate>80?'#ef4444':'#2BBFB3'}}>{usageRate}%</p>
@@ -227,6 +277,51 @@ export default function PartnerDashboard() {
               {usageRate > 80 && <p className="text-sm mt-3" style={{color:'#ef4444'}}>⚠️ Vous approchez de la limite — pensez à demander de nouveaux codes</p>}
             </div>
 
+            {/* ─── Graphiques ─── */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              {/* Courbe évolution envois */}
+              <div className="bg-white rounded-2xl p-5" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
+                <h2 className="text-sm font-bold mb-4" style={{color:'#1a2b4a'}}>Codes envoyés (12 semaines)</h2>
+                <div style={{ height: 160 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={sendChartData}>
+                      <defs>
+                        <linearGradient id="grad-sends" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#2BBFB3" stopOpacity={0.2} />
+                          <stop offset="100%" stopColor="#2BBFB3" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <Tooltip content={<ChartTooltip />} />
+                      <Area type="monotone" dataKey="value" stroke="#2BBFB3" strokeWidth={2} fill="url(#grad-sends)" dot={false} activeDot={{ r: 4, fill: '#2BBFB3' }} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Donut répartition */}
+              <div className="bg-white rounded-2xl p-5" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
+                <h2 className="text-sm font-bold mb-4" style={{color:'#1a2b4a'}}>Répartition des codes</h2>
+                <div style={{ height: 130 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={donutData} cx="50%" cy="50%" innerRadius={35} outerRadius={55} paddingAngle={3} dataKey="value" stroke="none">
+                        {donutData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                      </Pie>
+                      <Tooltip content={<ChartTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex justify-center gap-4 mt-2">
+                  {donutData.map(s => (
+                    <div key={s.name} className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                      <span className="text-xs" style={{ color: '#8a93a2' }}>{s.name} ({s.value})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             {/* Quick actions */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {requestTypes.slice(0,4).map(t=>(
@@ -244,6 +339,8 @@ export default function PartnerDashboard() {
 
         {activePage==='codes'&&<PartnerCodes partnerId={partnerId} />}
         {activePage==='team'&&<PartnerTeam partnerId={partnerId} />}
+        {activePage==='profile'&&<PartnerProfile partnerId={partnerId} />}
+        {activePage==='help'&&<PartnerHelp onNavigate={handleNavClick} />}
 
         {activePage==='contract'&&(
           <div>

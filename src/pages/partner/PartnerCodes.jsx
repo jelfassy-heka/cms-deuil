@@ -1,8 +1,15 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import xano from '../../lib/xano'
-import { Toast, useToast, useConfirm, SearchInput, CopyButton, SkeletonStats, SkeletonList, useDebounce, EmptyState, exportToCSV } from '../../components/SharedUI'
+import { Toast, useToast, ConfirmModal, useConfirm, SearchInput, CopyButton, SkeletonStats, SkeletonList, useDebounce, EmptyState, exportToCSV } from '../../components/SharedUI'
 
 const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
+
+const STATUS_CONFIG = {
+  pending: { label: 'En attente', color: '#d97706', bg: '#fef3c7', order: 0 },
+  sent: { label: 'Envoyé', color: '#2BBFB3', bg: '#e8f8f7', order: 1 },
+  opened: { label: 'Ouvert', color: '#3b82f6', bg: '#dbeafe', order: 2 },
+  activated: { label: 'Activé', color: '#1a2b4a', bg: '#e8f0fe', order: 3 },
+}
 
 const BENEF_FIELDS = [
   { key: 'first_name', label: 'Prénom', required: true },
@@ -11,6 +18,7 @@ const BENEF_FIELDS = [
   { key: 'department', label: 'Service' },
 ]
 
+// ─── CSV parser ───────────────────────────────────
 function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim())
   if (lines.length < 2) return { headers: [], rows: [] }
@@ -26,6 +34,7 @@ function autoMap(csvHeaders) {
   return mapping
 }
 
+// ─── Import Modal ─────────────────────────────────
 function ImportModal({ onClose, onImport, partnerId }) {
   const [step, setStep] = useState(1)
   const [csvData, setCsvData] = useState({ headers: [], rows: [] })
@@ -64,6 +73,7 @@ function ImportModal({ onClose, onImport, partnerId }) {
   )
 }
 
+// ─── Add Beneficiary Modal ────────────────────────
 function AddBeneficiaryModal({ onClose, onAdd, partnerId }) {
   const [form, setForm] = useState({ first_name:'', last_name:'', email:'', department:'' })
   const [loading, setLoading] = useState(false)
@@ -82,6 +92,62 @@ function AddBeneficiaryModal({ onClose, onAdd, partnerId }) {
   )
 }
 
+// ─── Batch Send Confirmation Panel ────────────────
+function BatchSendPanel({ count, maxSendable, onSend, onCancel }) {
+  const [customMessage, setCustomMessage] = useState('')
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4" style={{backgroundColor:'rgba(26,43,74,0.5)'}} onClick={e=>e.target===e.currentTarget&&onCancel()}>
+      <div className="bg-white w-full h-full md:h-auto md:rounded-3xl md:max-w-md overflow-y-auto" style={{boxShadow:'0 20px 60px rgba(43,191,179,0.15)'}}>
+        <div className="flex items-center justify-between p-5 border-b" style={{borderColor:'#f4f5f7'}}>
+          <h2 className="text-lg font-bold" style={{color:'#1a2b4a'}}>Confirmer l'envoi groupé</h2>
+          <button onClick={onCancel} className="w-8 h-8 rounded-xl flex items-center justify-center text-lg" style={{backgroundColor:'#f4f5f7',color:'#8a93a2'}}>×</button>
+        </div>
+        <div className="p-5">
+          <div className="rounded-xl p-4 mb-4" style={{backgroundColor:'#e8f8f7'}}>
+            <p className="text-sm font-medium" style={{color:'#065f46'}}>
+              {maxSendable} code{maxSendable > 1 ? 's' : ''} {maxSendable > 1 ? 'seront envoyés' : 'sera envoyé'} par email.
+            </p>
+            {count > maxSendable && (
+              <p className="text-xs mt-1" style={{color:'#92400e'}}>
+                {count - maxSendable} salarié{count - maxSendable > 1 ? 's' : ''} ne recevr{count - maxSendable > 1 ? 'ont' : 'a'} pas de code (pas assez de codes disponibles).
+              </p>
+            )}
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-semibold mb-1.5" style={{color:'#1a2b4a'}}>
+              Message personnalisé <span className="font-normal" style={{color:'#8a93a2'}}>(optionnel)</span>
+            </label>
+            <textarea
+              value={customMessage}
+              onChange={e => setCustomMessage(e.target.value)}
+              placeholder="Ajoutez un message qui sera inclus dans l'email envoyé à vos collaborateurs..."
+              rows={3}
+              className="w-full px-4 py-3 rounded-2xl text-sm outline-none resize-none"
+              style={{backgroundColor:'#f4f5f7', color:'#1a2b4a'}}
+            />
+            <p className="text-xs mt-1" style={{color:'#8a93a2'}}>Ce message apparaîtra dans l'email, en plus du template standard.</p>
+          </div>
+
+          <div className="flex gap-3">
+            <button onClick={() => onSend(customMessage)}
+              className="flex-1 py-3 rounded-2xl text-white text-sm font-semibold"
+              style={{backgroundColor:'#2BBFB3'}}>
+              Envoyer {maxSendable} code{maxSendable > 1 ? 's' : ''} →
+            </button>
+            <button onClick={onCancel}
+              className="px-5 py-3 rounded-2xl text-sm font-semibold"
+              style={{backgroundColor:'#f4f5f7', color:'#8a93a2'}}>
+              Annuler
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Composant principal ──────────────────────────
 export default function PartnerCodes({ partnerId }) {
   const [codes, setCodes] = useState([])
   const [beneficiaries, setBeneficiaries] = useState([])
@@ -91,16 +157,26 @@ export default function PartnerCodes({ partnerId }) {
   const [showImportModal, setShowImportModal] = useState(false)
   const [sendingTo, setSendingTo] = useState(null)
   const [sendingCode, setSendingCode] = useState('')
+  const [sendingMessage, setSendingMessage] = useState('')
   const [search, setSearch] = useState('')
   const [partnerName, setPartnerName] = useState('')
   const { toast, showToast, clearToast } = useToast()
   const { confirm, ConfirmDialog } = useConfirm()
   const debouncedSearch = useDebounce(search)
 
+  // Batch mode
+  const [batchMode, setBatchMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState([])
+  const [showBatchConfirm, setShowBatchConfirm] = useState(false)
+  const [batchProgress, setBatchProgress] = useState(null) // { current, total, log[] }
+
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [codesData, benefData] = await Promise.all([xano.getAll('plan-activation-code', { partnerId }), xano.getAll('beneficiaries', { partner_id: partnerId })])
+        const [codesData, benefData] = await Promise.all([
+          xano.getAll('plan-activation-code', { partnerId }),
+          xano.getAll('beneficiaries', { partner_id: partnerId }),
+        ])
         setCodes(codesData); setBeneficiaries(benefData)
         try { const p = await xano.getOne('partners', partnerId); setPartnerName(p.name) } catch(e){}
       } catch (err) { console.error(err) } finally { setLoading(false) }
@@ -114,12 +190,32 @@ export default function PartnerCodes({ partnerId }) {
   const sentCount = beneficiaries.filter(b => b.status==='sent'||b.status==='activated').length
   const usageRate = codes.length > 0 ? Math.round((usedCodes / codes.length) * 100) : 0
 
-  const filteredBeneficiaries = useMemo(() => {
-    if (!debouncedSearch) return beneficiaries
-    const s = debouncedSearch.toLowerCase()
-    return beneficiaries.filter(b => `${b.first_name} ${b.last_name} ${b.email} ${b.department||''}`.toLowerCase().includes(s))
-  }, [beneficiaries, debouncedSearch])
+  // Enrichir le statut avec le funnel
+  const enrichedBeneficiaries = useMemo(() => {
+    return beneficiaries.map(b => {
+      let status = b.status || 'pending'
+      // Vérifier si le code est utilisé (activated)
+      if (b.code && codes.find(c => c.code === b.code && c.used)) {
+        status = 'activated'
+      }
+      // Vérifier opened (via email_opened_at si le champ existe)
+      if (status === 'sent' && b.email_opened_at) {
+        status = 'opened'
+      }
+      return { ...b, enrichedStatus: status }
+    })
+  }, [beneficiaries, codes])
 
+  const filteredBeneficiaries = useMemo(() => {
+    if (!debouncedSearch) return enrichedBeneficiaries
+    const s = debouncedSearch.toLowerCase()
+    return enrichedBeneficiaries.filter(b => `${b.first_name} ${b.last_name} ${b.email} ${b.department||''}`.toLowerCase().includes(s))
+  }, [enrichedBeneficiaries, debouncedSearch])
+
+  // Eligible pour batch (pas encore envoyé)
+  const eligibleForBatch = filteredBeneficiaries.filter(b => b.enrichedStatus === 'pending' && !b.code)
+
+  // ─── Envoi unitaire ─────────────────────────────
   const handleSend = async benef => {
     if (!sendingCode) return
     const ok = await confirm('Confirmer l\'envoi', `Envoyer le code ${sendingCode} à ${benef.first_name} ${benef.last_name} (${benef.email}) ?`, { confirmLabel: 'Envoyer', confirmColor: '#2BBFB3' })
@@ -128,9 +224,74 @@ export default function PartnerCodes({ partnerId }) {
       await xano.update('beneficiaries', benef.id, { code: sendingCode, status: 'sent', sent_at: new Date().toISOString() })
       await fetch(`${XANO_BASE}/send-code-email`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to_email: benef.email, to_name: benef.first_name, code: sendingCode, partner_name: partnerName || 'Votre entreprise', template_id: 9 }) })
       setBeneficiaries(prev => prev.map(b => b.id === benef.id ? { ...b, code: sendingCode, status: 'sent', sent_at: new Date().toISOString() } : b))
-      setSendingTo(null); setSendingCode('')
+      setSendingTo(null); setSendingCode(''); setSendingMessage('')
       showToast(`Code ${sendingCode} envoyé à ${benef.first_name}`)
     } catch (err) { console.error(err); showToast('Erreur lors de l\'envoi', 'error') }
+  }
+
+  // ─── Envoi batch ────────────────────────────────
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  const toggleAll = () => {
+    if (selectedIds.length === eligibleForBatch.length) {
+      setSelectedIds([])
+    } else {
+      setSelectedIds(eligibleForBatch.map(b => b.id))
+    }
+  }
+
+  const maxBatchSendable = Math.min(selectedIds.length, availableCodes.length)
+
+  const handleBatchSend = async (customMessage) => {
+    setShowBatchConfirm(false)
+    const total = maxBatchSendable
+    const log = []
+    setBatchProgress({ current: 0, total, log })
+
+    const toSend = selectedIds.slice(0, maxBatchSendable)
+
+    for (let i = 0; i < toSend.length; i++) {
+      const benef = beneficiaries.find(b => b.id === toSend[i])
+      const code = availableCodes[i]
+
+      if (!benef || !code) {
+        log.push({ name: '?', status: 'error' })
+        setBatchProgress({ current: i + 1, total, log: [...log] })
+        continue
+      }
+
+      try {
+        await xano.update('beneficiaries', benef.id, {
+          code: code.code, status: 'sent', sent_at: new Date().toISOString(),
+        })
+        const emailBody = {
+          to_email: benef.email,
+          to_name: `${benef.first_name} ${benef.last_name}`,
+          code: code.code,
+          partner_name: partnerName || 'Votre entreprise',
+          template_id: 9,
+        }
+        if (customMessage) emailBody.custom_message = customMessage
+        await fetch(`${XANO_BASE}/send-code-email`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(emailBody),
+        })
+
+        setBeneficiaries(prev => prev.map(b => b.id === benef.id ? { ...b, code: code.code, status: 'sent', sent_at: new Date().toISOString() } : b))
+        log.push({ name: `${benef.first_name} ${benef.last_name}`, status: 'success' })
+      } catch (err) {
+        log.push({ name: `${benef.first_name} ${benef.last_name}`, status: 'error' })
+      }
+      setBatchProgress({ current: i + 1, total, log: [...log] })
+    }
+
+    const success = log.filter(l => l.status === 'success').length
+    showToast(`${success} code${success > 1 ? 's' : ''} envoyé${success > 1 ? 's' : ''} avec succès`)
+    setBatchMode(false)
+    setSelectedIds([])
+    setTimeout(() => setBatchProgress(null), 3000)
   }
 
   if (loading) return <div><SkeletonStats count={4} /><SkeletonList count={4} /></div>
@@ -140,54 +301,161 @@ export default function PartnerCodes({ partnerId }) {
       {ConfirmDialog}
       {showAddModal && <AddBeneficiaryModal onClose={()=>setShowAddModal(false)} onAdd={c=>{setBeneficiaries(p=>[...p,c]);showToast('Salarié ajouté')}} partnerId={partnerId} />}
       {showImportModal && <ImportModal onClose={()=>setShowImportModal(false)} onImport={i=>{setBeneficiaries(p=>[...p,...i]);showToast(`${i.length} salarié(s) importé(s)`)}} partnerId={partnerId} />}
+      {showBatchConfirm && <BatchSendPanel count={selectedIds.length} maxSendable={maxBatchSendable} onSend={handleBatchSend} onCancel={()=>setShowBatchConfirm(false)} />}
 
       <Toast toast={toast} onClose={clearToast} />
 
       <div className="mb-6"><h1 className="text-xl md:text-2xl font-bold" style={{color:'#1a2b4a'}}>Mes codes</h1><p className="text-sm mt-1" style={{color:'#8a93a2'}}>Envoyez des codes d'accès à vos collaborateurs</p></div>
 
+      {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         {[{l:'Disponibles',v:availableCodes.length,c:'#2BBFB3'},{l:'Envoyés',v:sentCount,c:'#1a2b4a'},{l:'Salariés',v:beneficiaries.length,c:'#d97706'},{l:'Utilisation',v:`${usageRate}%`,c:usageRate>80?'#ef4444':'#8a93a2'}].map(s=>(
           <div key={s.l} className="bg-white rounded-2xl p-4" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}><p className="text-xl font-bold mb-1" style={{color:s.c}}>{s.v}</p><p className="text-xs" style={{color:'#8a93a2'}}>{s.l}</p></div>
         ))}
       </div>
 
+      {/* Progress bar */}
       <div className="bg-white rounded-2xl p-4 mb-6" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
         <div className="flex items-center justify-between mb-2"><p className="text-sm font-semibold" style={{color:'#1a2b4a'}}>Utilisation</p><span className="text-sm font-semibold" style={{color:usageRate>80?'#ef4444':'#2BBFB3'}}>{usageRate}%</span></div>
         <div className="w-full rounded-full h-2.5" style={{backgroundColor:'#f4f5f7'}}><div className="h-2.5 rounded-full" style={{width:`${usageRate}%`,backgroundColor:usageRate>80?'#ef4444':'#2BBFB3'}} /></div>
       </div>
 
+      {/* Batch progress overlay */}
+      {batchProgress && (
+        <div className="bg-white rounded-2xl p-4 mb-4" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)', border:'1.5px solid #2BBFB3'}}>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-semibold" style={{color:'#1a2b4a'}}>Envoi en cours...</p>
+            <p className="text-sm font-semibold" style={{color:'#2BBFB3'}}>{batchProgress.current}/{batchProgress.total}</p>
+          </div>
+          <div className="w-full rounded-full h-2.5 mb-2" style={{backgroundColor:'#f4f5f7'}}>
+            <div className="h-2.5 rounded-full transition-all duration-300" style={{width:`${(batchProgress.current/batchProgress.total)*100}%`,backgroundColor:'#2BBFB3'}} />
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {batchProgress.log.map((l, i) => (
+              <div key={i} className="w-2 h-2 rounded-full" style={{backgroundColor: l.status === 'success' ? '#2BBFB3' : '#ef4444'}} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <div className="flex rounded-xl overflow-hidden" style={{backgroundColor:'#f4f5f7'}}>
           {[{k:'beneficiaries',l:`Salariés (${beneficiaries.length})`},{k:'codes',l:`Codes (${codes.length})`}].map(t=>(
-            <button key={t.k} onClick={()=>setTab(t.k)} className="px-4 py-2.5 text-sm font-medium" style={{backgroundColor:tab===t.k?'#2BBFB3':'transparent',color:tab===t.k?'white':'#8a93a2',borderRadius:tab===t.k?'10px':'0'}}>{t.l}</button>
+            <button key={t.k} onClick={()=>{setTab(t.k);setBatchMode(false);setSelectedIds([])}} className="px-4 py-2.5 text-sm font-medium" style={{backgroundColor:tab===t.k?'#2BBFB3':'transparent',color:tab===t.k?'white':'#8a93a2',borderRadius:tab===t.k?'10px':'0'}}>{t.l}</button>
           ))}
         </div>
         {tab==='beneficiaries'&&<div className="flex gap-2">
           <button onClick={()=>exportToCSV(beneficiaries,'salaries',[{key:'first_name',label:'Prénom'},{key:'last_name',label:'Nom'},{key:'email',label:'Email'},{key:'department',label:'Service'},{key:'code',label:'Code'},{key:'status',label:'Statut'}])} className="px-3 py-2.5 rounded-xl text-sm font-semibold" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}}>📥</button>
           <button onClick={()=>setShowImportModal(true)} className="px-3 py-2.5 rounded-xl text-sm font-semibold" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}}>📄 CSV</button>
+          <button onClick={()=>{setBatchMode(!batchMode);setSelectedIds([])}}
+            className="px-3 py-2.5 rounded-xl text-sm font-semibold"
+            style={{backgroundColor:batchMode?'#e8f8f7':'#f4f5f7',color:batchMode?'#2BBFB3':'#1a2b4a', border: batchMode ? '1.5px solid #2BBFB3' : '1.5px solid transparent'}}>
+            {batchMode ? '✕ Annuler' : '📨 Envoi groupé'}
+          </button>
           <button onClick={()=>setShowAddModal(true)} className="px-4 py-2.5 rounded-xl text-white text-sm font-semibold" style={{backgroundColor:'#2BBFB3'}}>+ Ajouter</button>
         </div>}
       </div>
 
       {tab==='beneficiaries'&&<div className="mb-4"><SearchInput value={search} onChange={setSearch} placeholder="Rechercher un salarié..." /></div>}
 
+      {/* Batch mode header */}
+      {batchMode && tab === 'beneficiaries' && (
+        <div className="flex items-center justify-between rounded-xl p-3 mb-3"
+          style={{backgroundColor:'#e8f8f7', border:'1px solid #a7f3d0'}}>
+          <div className="flex items-center gap-3">
+            <button onClick={toggleAll}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium"
+              style={{backgroundColor:'white', color:'#1a2b4a'}}>
+              {selectedIds.length === eligibleForBatch.length ? 'Tout désélectionner' : 'Tout sélectionner'}
+            </button>
+            <p className="text-sm font-medium" style={{color:'#065f46'}}>
+              {selectedIds.length} sélectionné{selectedIds.length > 1 ? 's' : ''} · {availableCodes.length} codes dispo
+            </p>
+          </div>
+          <button onClick={()=>setShowBatchConfirm(true)}
+            disabled={selectedIds.length === 0}
+            className="px-4 py-2 rounded-xl text-white text-sm font-semibold"
+            style={{backgroundColor: selectedIds.length > 0 ? '#2BBFB3' : '#d1d5db'}}>
+            Envoyer {maxBatchSendable} →
+          </button>
+        </div>
+      )}
+
+      {/* ─── TAB: Salariés ─── */}
       {tab==='beneficiaries'&&(
         filteredBeneficiaries.length===0 ? <EmptyState icon="👥" title={search?'Aucun résultat':'Aucun salarié'} message={search?'Essayez avec d\'autres mots-clés':'Ajoutez des salariés pour leur envoyer des codes'} actionLabel={!search&&'+ Ajouter un salarié'} onAction={!search?()=>setShowAddModal(true):undefined} /> : (
           <div className="flex flex-col gap-2">{filteredBeneficiaries.map(b=>{
-            const isSending=sendingTo===b.id; const hasSent=b.status==='sent'||b.status==='activated'
+            const isSending=sendingTo===b.id
+            const status = STATUS_CONFIG[b.enrichedStatus] || STATUS_CONFIG.pending
+            const hasSent = b.enrichedStatus === 'sent' || b.enrichedStatus === 'opened' || b.enrichedStatus === 'activated'
+            const isEligible = b.enrichedStatus === 'pending' && !b.code
+            const isSelected = selectedIds.includes(b.id)
+
             return (
-              <div key={b.id} className="bg-white rounded-2xl px-4 py-4" style={{boxShadow:'0 2px 8px rgba(0,0,0,0.04)',border:isSending?'1.5px solid #2BBFB3':'1.5px solid transparent',opacity:hasSent?0.75:1}}>
+              <div key={b.id} className="bg-white rounded-2xl px-4 py-4" style={{boxShadow:'0 2px 8px rgba(0,0,0,0.04)',border:isSending?'1.5px solid #2BBFB3': isSelected?'1.5px solid #2BBFB3':'1.5px solid transparent',opacity:hasSent?0.85:1}}>
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0"><div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0" style={{backgroundColor:hasSent?'#8a93a2':'#2BBFB3'}}>{b.first_name?.[0]}{b.last_name?.[0]}</div><div className="min-w-0"><p className="font-semibold text-sm truncate" style={{color:'#1a2b4a'}}>{b.first_name} {b.last_name}</p><p className="text-xs truncate" style={{color:'#8a93a2'}}>{b.email}{b.department&&` · ${b.department}`}</p></div></div>
-                  {hasSent?<span className="text-xs px-2 py-1 rounded-lg font-medium" style={{backgroundColor:'#e8f8f7',color:'#2BBFB3'}}>Envoyé</span>:<button onClick={()=>{setSendingTo(isSending?null:b.id);setSendingCode('')}} className="px-3 py-1.5 rounded-xl text-white text-xs font-medium" style={{backgroundColor:'#2BBFB3'}}>Envoyer</button>}
+                  <div className="flex items-center gap-3 min-w-0">
+                    {/* Checkbox batch */}
+                    {batchMode && isEligible && (
+                      <button onClick={() => toggleSelect(b.id)}
+                        className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
+                        style={{backgroundColor:isSelected?'#2BBFB3':'white',border:isSelected?'none':'1.5px solid #d1d5db'}}>
+                        {isSelected && <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      </button>
+                    )}
+                    {batchMode && !isEligible && <div className="w-5 h-5 flex-shrink-0" />}
+
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0" style={{backgroundColor:hasSent?'#8a93a2':'#2BBFB3'}}>{b.first_name?.[0]}{b.last_name?.[0]}</div>
+                    <div className="min-w-0"><p className="font-semibold text-sm truncate" style={{color:'#1a2b4a'}}>{b.first_name} {b.last_name}</p><p className="text-xs truncate" style={{color:'#8a93a2'}}>{b.email}{b.department&&` · ${b.department}`}</p></div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {/* Funnel status badge */}
+                    <span className="text-xs px-2 py-1 rounded-lg font-medium"
+                      style={{backgroundColor: status.bg, color: status.color}}>
+                      {status.label}
+                    </span>
+                    {!hasSent && !batchMode && (
+                      <button onClick={()=>{setSendingTo(isSending?null:b.id);setSendingCode('');setSendingMessage('')}} className="px-3 py-1.5 rounded-xl text-white text-xs font-medium" style={{backgroundColor:'#2BBFB3'}}>Envoyer</button>
+                    )}
+                  </div>
                 </div>
-                {hasSent&&b.code&&<div className="flex items-center gap-2 mt-2 pt-2" style={{borderTop:'1px solid #f4f5f7'}}><div className="w-1.5 h-1.5 rounded-full" style={{backgroundColor:'#2BBFB3'}} /><p className="text-xs flex-1" style={{color:'#8a93a2'}}>Code <span style={{fontFamily:'monospace',color:'#1a2b4a'}}>{b.code}</span>{b.sent_at&&` · ${new Date(b.sent_at).toLocaleDateString('fr-FR')}`}</p><CopyButton text={b.code} /></div>}
+
+                {/* Code info for sent items */}
+                {hasSent&&b.code&&(
+                  <div className="flex items-center gap-2 mt-2 pt-2" style={{borderTop:'1px solid #f4f5f7'}}>
+                    <div className="w-1.5 h-1.5 rounded-full" style={{backgroundColor: status.color}} />
+                    <p className="text-xs flex-1" style={{color:'#8a93a2'}}>
+                      Code <span style={{fontFamily:'monospace',color:'#1a2b4a'}}>{b.code}</span>
+                      {b.sent_at&&` · envoyé le ${new Date(b.sent_at).toLocaleDateString('fr-FR')}`}
+                    </p>
+                    <CopyButton text={b.code} />
+                  </div>
+                )}
+
+                {/* Envoi unitaire panel */}
                 {isSending&&!hasSent&&(
                   <div className="mt-3 pt-3" style={{borderTop:'1px solid #f4f5f7'}}>
                     <p className="text-xs font-semibold mb-2" style={{color:'#1a2b4a'}}>Code pour {b.first_name}</p>
                     {availableCodes.length===0?<p className="text-xs" style={{color:'#ef4444'}}>Aucun code disponible</p>:(
-                      <><select value={sendingCode} onChange={e=>setSendingCode(e.target.value)} className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-3" style={{backgroundColor:'#f4f5f7',fontFamily:sendingCode?'monospace':'inherit'}}><option value="">Sélectionner...</option>{availableCodes.map(c=><option key={c.id} value={c.code}>{c.code}</option>)}</select>
-                      <div className="flex gap-2"><button onClick={()=>handleSend(b)} disabled={!sendingCode} className="px-4 py-2 rounded-xl text-white text-sm font-medium" style={{backgroundColor:sendingCode?'#2BBFB3':'#d1d5db'}}>Confirmer →</button><button onClick={()=>setSendingTo(null)} className="px-4 py-2 rounded-xl text-sm" style={{backgroundColor:'#f4f5f7',color:'#8a93a2'}}>Annuler</button></div></>
+                      <>
+                        <select value={sendingCode} onChange={e=>setSendingCode(e.target.value)} className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-3" style={{backgroundColor:'#f4f5f7',fontFamily:sendingCode?'monospace':'inherit'}}><option value="">Sélectionner un code...</option>{availableCodes.map(c=><option key={c.id} value={c.code}>{c.code}</option>)}</select>
+
+                        <textarea
+                          value={sendingMessage}
+                          onChange={e => setSendingMessage(e.target.value)}
+                          placeholder="Message personnalisé (optionnel)..."
+                          rows={2}
+                          className="w-full px-3 py-2.5 rounded-xl text-sm outline-none resize-none mb-3"
+                          style={{backgroundColor:'#f4f5f7', color:'#1a2b4a'}}
+                        />
+
+                        <div className="flex gap-2">
+                          <button onClick={()=>handleSend(b)} disabled={!sendingCode} className="px-4 py-2 rounded-xl text-white text-sm font-medium" style={{backgroundColor:sendingCode?'#2BBFB3':'#d1d5db'}}>Confirmer →</button>
+                          <button onClick={()=>setSendingTo(null)} className="px-4 py-2 rounded-xl text-sm" style={{backgroundColor:'#f4f5f7',color:'#8a93a2'}}>Annuler</button>
+                        </div>
+                      </>
                     )}
                   </div>
                 )}
@@ -197,6 +465,7 @@ export default function PartnerCodes({ partnerId }) {
         )
       )}
 
+      {/* ─── TAB: Codes ─── */}
       {tab==='codes'&&(
         codes.length===0 ? <EmptyState icon="🔑" title="Aucun code" message="Les codes assignés à votre espace apparaîtront ici" /> : (
           <div className="bg-white rounded-2xl overflow-hidden" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
