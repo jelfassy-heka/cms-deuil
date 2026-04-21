@@ -1,16 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import xano from '../../lib/xano'
 import Partners from './Partners'
 import CRM from './CRM'
 import Users from './Users'
 import CodeGenerator from './CodeGenerator'
 import Requests from './Requests'
 import AdminAccounts from './AdminAccounts'
-const stats = [
-  { label: 'Partenaires actifs', value: '0', color: '#2BBFB3' },
-  { label: 'Codes générés', value: '0', color: '#1a2b4a' },
-  { label: 'Demandes en attente', value: '0', color: '#f59e0b' },
-]
 
 const navItems = [
   { label: 'Tableau de bord', icon: '⊞', path: 'dashboard' },
@@ -27,7 +23,30 @@ export default function AdminDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const [stats, setStats] = useState({ partners: 0, codes: 0, pending: 0, users: 0, beneficiaries: 0 })
   const navigate = useNavigate()
+
+  // Fetch dashboard stats
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const [partners, codes, requests, users] = await Promise.all([
+          xano.getAll('partners'),
+          xano.getAll('plan-activation-code'),
+          xano.getAll('code_request'),
+          xano.getAll('users'),
+        ])
+        setStats({
+          partners: partners.filter(p => p.crm_status === 'client actif').length,
+          codes: codes.length,
+          pending: requests.filter(r => r.request_status === 'pending').length,
+          users: users.length,
+          beneficiaries: 0,
+        })
+      } catch (err) { console.error('Erreur stats:', err) }
+    }
+    fetchStats()
+  }, [])
 
   // Détecter mobile et fermer sidebar automatiquement
   useEffect(() => {
@@ -238,12 +257,17 @@ export default function AdminDashboard() {
               <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Tableau de bord</h1>
               <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>Bienvenue dans votre espace de gestion Héka</p>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-8">
-              {stats.map(stat => (
-                <div key={stat.label} className="bg-white rounded-3xl p-5 md:p-6"
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4 mb-8">
+              {[
+                { label: 'Partenaires actifs', value: stats.partners, color: '#2BBFB3' },
+                { label: 'Codes générés', value: stats.codes, color: '#1a2b4a' },
+                { label: 'Demandes en attente', value: stats.pending, color: '#f59e0b' },
+                { label: 'Utilisateurs app', value: stats.users, color: '#8b5cf6' },
+              ].map(stat => (
+                <div key={stat.label} className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6"
                   style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
                   <p className="text-2xl md:text-3xl font-bold mb-1" style={{ color: stat.color }}>{stat.value}</p>
-                  <p className="text-sm" style={{ color: '#8a93a2' }}>{stat.label}</p>
+                  <p className="text-xs md:text-sm" style={{ color: '#8a93a2' }}>{stat.label}</p>
                 </div>
               ))}
             </div>
