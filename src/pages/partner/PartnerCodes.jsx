@@ -103,6 +103,7 @@ export default function PartnerCodes({ partnerId }) {
   const [sendingCode, setSendingCode] = useState('')
   const [toast, setToast] = useState(null)
   const [search, setSearch] = useState('')
+  const [partnerName, setPartnerName] = useState('')
 
   useEffect(() => {
     const fetchData = async () => {
@@ -111,7 +112,9 @@ export default function PartnerCodes({ partnerId }) {
           xano.getAll('plan-activation-code', { partnerId }),
           xano.getAll('beneficiaries', { partner_id: partnerId }),
         ])
-        setCodes(codesData); setBeneficiaries(benefData)
+        setCodes(codesData)
+        setBeneficiaries(benefData)
+        try { const p = await xano.getOne('partners', partnerId); setPartnerName(p.name) } catch(e) {}
       } catch (err) { console.error(err) }
       finally { setLoading(false) }
     }
@@ -133,12 +136,28 @@ export default function PartnerCodes({ partnerId }) {
   const handleSend = async benef => {
     if (!sendingCode) return
     try {
+      // 1. Mettre à jour le bénéficiaire dans Xano
       await xano.update('beneficiaries', benef.id, { code: sendingCode, status: 'sent', sent_at: new Date().toISOString() })
+
+      // 2. Envoyer l'email via Xano → Brevo
+      await fetch(`${XANO_BASE}/send-code-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to_email: benef.email,
+          to_name: benef.first_name,
+          code: sendingCode,
+          partner_name: partnerName || 'Votre entreprise',
+          template_id: 9,
+        }),
+      })
+
+      // 3. Mettre à jour le state local
       setBeneficiaries(prev => prev.map(b => b.id === benef.id ? { ...b, code: sendingCode, status: 'sent', sent_at: new Date().toISOString() } : b))
       setSendingTo(null); setSendingCode('')
       setToast({ name: `${benef.first_name} ${benef.last_name}`, code: sendingCode })
       setTimeout(() => setToast(null), 5000)
-    } catch (err) { console.error(err) }
+    } catch (err) { console.error('Erreur envoi:', err) }
   }
 
   if (loading) return <div className="flex items-center justify-center h-64"><p style={{ color: '#8a93a2' }}>Chargement...</p></div>
