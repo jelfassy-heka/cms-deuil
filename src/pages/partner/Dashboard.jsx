@@ -48,6 +48,31 @@ function ChartTooltip({ active, payload, label }) {
   )
 }
 
+// ─── Icônes SVG navigation partenaire ─────────────
+function PartnerNavIcon({ icon, active }) {
+  const color = active ? 'white' : '#8a93a2'
+  switch (icon) {
+    case 'dashboard':
+      return (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill={color}/><rect x="9" y="1" width="6" height="6" rx="1.5" fill={color}/><rect x="1" y="9" width="6" height="6" rx="1.5" fill={color}/><rect x="9" y="9" width="6" height="6" rx="1.5" fill={color}/></svg>)
+    case 'codes':
+      return (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="5" width="10" height="7" rx="2" stroke={color} strokeWidth="1.3"/><path d="M11 7.5V6a4 4 0 0 1 4 4" stroke={color} strokeWidth="1.3" strokeLinecap="round"/><circle cx="7" cy="8.5" r="1.2" fill={color}/></svg>)
+    case 'team':
+      return (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11 14v-1.5A2.5 2.5 0 0 0 8.5 10h-5A2.5 2.5 0 0 0 1 12.5V14M9.5 1a2.5 2.5 0 0 1 0 5M12 14v-1.5a2.5 2.5 0 0 0-1.5-2.3M6 7a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Z" stroke={color} strokeWidth="1.3" strokeLinecap="round"/></svg>)
+    case 'contract':
+      return (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 1h7l4 4v10H3V1Z" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><path d="M10 1v4h4M6 8h5M6 11h3" stroke={color} strokeWidth="1.3" strokeLinecap="round"/></svg>)
+    case 'requests':
+      return (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 2h12v10H2V2ZM5 6h6M5 8.5h4" stroke={color} strokeWidth="1.3" strokeLinecap="round"/></svg>)
+    case 'new-request':
+      return (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 3l12 5-12 5V9l8-1-8-1V3z" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>)
+    case 'profile':
+      return (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5" r="3" stroke={color} strokeWidth="1.3"/><path d="M2 14a6 6 0 0 1 12 0" stroke={color} strokeWidth="1.3" strokeLinecap="round"/></svg>)
+    case 'help':
+      return (<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke={color} strokeWidth="1.3"/><path d="M6 6a2 2 0 0 1 3.5 1.5c0 1.5-2 1.5-2 3" stroke={color} strokeWidth="1.3" strokeLinecap="round"/><circle cx="8" cy="12.5" r="0.5" fill={color}/></svg>)
+    default:
+      return null
+  }
+}
+
 export default function PartnerDashboard() {
   const { user, partnerId, memberRole, signOut } = useAuth()
   const navigate = useNavigate()
@@ -60,9 +85,10 @@ export default function PartnerDashboard() {
   const [activePage, setActivePage] = useState('dashboard')
   const [activeRequestType, setActiveRequestType] = useState(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [isMobile, setIsMobile] = useState(false)
 
-  useEffect(() => { const c=()=>setIsMobile(window.innerWidth<768); c(); window.addEventListener('resize',c); return()=>window.removeEventListener('resize',c) }, [])
+  useEffect(() => { const c=()=>{const m=window.innerWidth<768;setIsMobile(m);if(m)setSidebarOpen(false)}; c(); window.addEventListener('resize',c); return()=>window.removeEventListener('resize',c) }, [])
 
   useEffect(() => {
     if (!user || !partnerId) { navigate('/login'); return }
@@ -136,14 +162,14 @@ export default function PartnerDashboard() {
   }), [requests, codes, contract, beneficiaries])
 
   const navItems = [
-    { label:'Tableau de bord', icon:'⊞', path:'dashboard' },
-    { label:'Mes codes', icon:'🔑', path:'codes' },
-    { label:'Mon équipe', icon:'👥', path:'team' },
-    { label:'Mon contrat', icon:'📄', path:'contract' },
-    { label:'Mes demandes', icon:'📋', path:'requests' },
-    { label:'Nouvelle demande', icon:'✉️', path:'new_request' },
-    { label:'Mon profil', icon:'👤', path:'profile' },
-    { label:'Aide', icon:'❓', path:'help' },
+    { label:'Tableau de bord', icon:'dashboard', path:'dashboard' },
+    { label:'Mes codes', icon:'codes', path:'codes' },
+    { label:'Mon équipe', icon:'team', path:'team' },
+    { label:'Mon contrat', icon:'contract', path:'contract' },
+    { label:'Mes demandes', icon:'requests', path:'requests' },
+    { label:'Nouvelle demande', icon:'new-request', path:'new_request' },
+    { label:'Mon profil', icon:'profile', path:'profile' },
+    { label:'Aide', icon:'help', path:'help' },
   ]
 
   if (loading) return <div className="flex items-center justify-center min-h-screen"><p style={{color:'#8a93a2'}}>Chargement...</p></div>
@@ -166,59 +192,144 @@ export default function PartnerDashboard() {
       )}
 
       {/* Sidebar */}
-      <div className={`bg-white flex flex-col py-6 px-4 transition-all duration-300 ${isMobile?`fixed top-0 left-0 bottom-0 z-50 ${mobileMenuOpen?'translate-x-0':'-translate-x-full'}`:'relative'}`} style={{width:isMobile?'280px':'256px',boxShadow:'2px 0 12px rgba(43,191,179,0.06)'}}>
+      <div className={`bg-white flex flex-col py-6 transition-all duration-300 ${
+        isMobile
+          ? `fixed top-0 left-0 bottom-0 z-50 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`
+          : 'relative'
+      }`}
+        style={{
+          width: isMobile ? '280px' : (sidebarOpen ? '240px' : '72px'),
+          boxShadow: '2px 0 12px rgba(43,191,179,0.06)',
+          flexShrink: 0,
+        }}>
 
-        <div className="px-4 mb-6">
-          <div className="flex items-center justify-between">
-            <img src="/logo.png" alt="Héka" className="h-10 rounded-xl" />
-            {isMobile&&<button onClick={()=>setMobileMenuOpen(false)} className="w-8 h-8 rounded-xl flex items-center justify-center" style={{backgroundColor:'#f4f5f7'}}><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3L11 11M11 3L3 11" stroke="#8a93a2" strokeWidth="1.5" strokeLinecap="round"/></svg></button>}
-          </div>
+        {/* Logo + toggle */}
+        <div className="flex items-center justify-between px-4 mb-6">
+          {(sidebarOpen || isMobile) && (
+            <img src="/logo.png" alt="Héka" className="h-9 rounded-xl" />
+          )}
+          {isMobile ? (
+            <button onClick={() => setMobileMenuOpen(false)}
+              className="w-9 h-9 rounded-xl flex items-center justify-center"
+              style={{ backgroundColor: '#f4f5f7' }}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M4 4L12 12M12 4L4 12" stroke="#8a93a2" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </button>
+          ) : (
+            <button onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
+              style={{ backgroundColor: '#f4f5f7', marginLeft: sidebarOpen ? '0' : 'auto', marginRight: sidebarOpen ? '0' : 'auto' }}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                {sidebarOpen
+                  ? <path d="M10 3L5 8L10 13" stroke="#2BBFB3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  : <path d="M6 3L11 8L6 13" stroke="#2BBFB3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                }
+              </svg>
+            </button>
+          )}
         </div>
 
-        {/* Partner card + notifications desktop */}
-        <div className="px-2 mb-6">
-          <div className="rounded-2xl p-3" style={{backgroundColor:'#e8f8f7'}}>
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0" style={{backgroundColor:'#2BBFB3'}}>
-                {partnerName[0]}
+        {/* Partner card */}
+        {(sidebarOpen || isMobile) && (
+          <div className="px-3 mb-4">
+            <div className="rounded-2xl p-3" style={{backgroundColor:'#e8f8f7'}}>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0" style={{backgroundColor:'#2BBFB3'}}>
+                  {partnerName[0]}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold truncate" style={{color:'#1a2b4a'}}>{partnerName}</p>
+                  <p className="text-xs truncate" style={{color:'#8a93a2'}}>{partnerInfo?.partner_type || 'entreprise'}</p>
+                </div>
+                {!isMobile && <PartnerNotifications data={notifData} onNavigate={handleNavClick} />}
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold truncate" style={{color:'#1a2b4a'}}>{partnerName}</p>
-                <p className="text-xs truncate" style={{color:'#8a93a2'}}>{partnerInfo?.partner_type || 'entreprise'}</p>
-              </div>
-              {!isMobile && <PartnerNotifications data={notifData} onNavigate={handleNavClick} />}
             </div>
           </div>
-        </div>
+        )}
 
-        <nav className="flex-1">
-          {navItems.map(item=>(
-            <button key={item.path} onClick={()=>handleNavClick(item.path)}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl mb-1 text-sm font-medium transition-all"
-              style={{backgroundColor:activePage===item.path?'#e8f8f7':'transparent',color:activePage===item.path?'#2BBFB3':'#8a93a2'}}>
-              <span>{item.icon}</span>{item.label}
+        {(sidebarOpen || isMobile) && (
+          <p className="text-xs px-5 mb-3 font-semibold tracking-wider" style={{ color: '#8a93a2' }}>
+            NAVIGATION
+          </p>
+        )}
+
+        {/* Nav items */}
+        <nav className="flex-1 px-3">
+          {navItems.map(item => (
+            <button key={item.path}
+              onClick={() => handleNavClick(item.path)}
+              className="w-full flex items-center mb-1 transition-all duration-200 group"
+              style={{
+                gap: (sidebarOpen || isMobile) ? '12px' : '0',
+                padding: (sidebarOpen || isMobile) ? '10px 12px' : '10px',
+                borderRadius: '12px',
+                justifyContent: (sidebarOpen || isMobile) ? 'flex-start' : 'center',
+                backgroundColor: activePage === item.path ? '#e8f8f7' : 'transparent',
+                position: 'relative',
+              }}>
+              <div className="flex items-center justify-center flex-shrink-0 transition-all duration-200"
+                style={{
+                  width: '32px', height: '32px', borderRadius: '8px',
+                  backgroundColor: activePage === item.path ? '#2BBFB3' : '#f4f5f7',
+                }}>
+                <PartnerNavIcon icon={item.icon} active={activePage === item.path} />
+              </div>
+              {(sidebarOpen || isMobile) && (
+                <span className="text-sm font-medium transition-all"
+                  style={{ color: activePage === item.path ? '#2BBFB3' : '#8a93a2' }}>
+                  {item.label}
+                </span>
+              )}
+              {!sidebarOpen && !isMobile && (
+                <div className="absolute left-full ml-2 px-2 py-1 rounded-lg text-xs font-medium text-white pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50"
+                  style={{ backgroundColor: '#1a2b4a' }}>
+                  {item.label}
+                </div>
+              )}
             </button>
           ))}
         </nav>
 
-        <div className="px-2 mb-2">
-          <div className="rounded-2xl p-3" style={{backgroundColor:'#f4f5f7'}}>
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                style={{backgroundColor: memberRole === 'admin' ? '#1a2b4a' : '#8a93a2'}}>
-                {user.email?.[0]?.toUpperCase() || '?'}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-medium truncate" style={{color:'#1a2b4a'}}>{user.email}</p>
-                <p className="text-xs" style={{color:'#8a93a2'}}>{memberRole === 'admin' ? 'Administrateur' : 'Membre'}</p>
+        {/* User card */}
+        {(sidebarOpen || isMobile) && (
+          <div className="px-3 mb-2">
+            <div className="rounded-2xl p-3" style={{backgroundColor:'#f4f5f7'}}>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                  style={{backgroundColor: memberRole === 'admin' ? '#1a2b4a' : '#8a93a2'}}>
+                  {user.email?.[0]?.toUpperCase() || '?'}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium truncate" style={{color:'#1a2b4a'}}>{user.email}</p>
+                  <p className="text-xs" style={{color:'#8a93a2'}}>{memberRole === 'admin' ? 'Administrateur' : 'Membre'}</p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
-        <button onClick={handleSignOut} className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium" style={{color:'#ef4444'}}>
-          ← Se déconnecter
-        </button>
+        {/* Déconnexion */}
+        <div className="px-3">
+          <button onClick={handleSignOut}
+            className="w-full flex items-center transition-all duration-200"
+            style={{
+              gap: (sidebarOpen || isMobile) ? '12px' : '0',
+              padding: (sidebarOpen || isMobile) ? '10px 12px' : '10px',
+              borderRadius: '12px',
+              justifyContent: (sidebarOpen || isMobile) ? 'flex-start' : 'center',
+            }}>
+            <div className="flex items-center justify-center flex-shrink-0"
+              style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: '#fee2e2' }}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M6 14H2V2h4M10 11l4-3-4-3M5 8h9" stroke="#ef4444" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            {(sidebarOpen || isMobile) && (
+              <span className="text-sm font-medium" style={{ color: '#ef4444' }}>Se déconnecter</span>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Contenu */}
