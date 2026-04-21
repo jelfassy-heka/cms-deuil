@@ -172,7 +172,7 @@ export default function PartnerDashboard() {
     { label:'Aide', icon:'help', path:'help' },
   ]
 
-  if (loading) return <div className="flex items-center justify-center min-h-screen"><p style={{color:'#8a93a2'}}>Chargement...</p></div>
+  if (loading || !user) return <div className="flex items-center justify-center min-h-screen"><p style={{color:'#8a93a2'}}>Chargement...</p></div>
 
   return (
     <div className="flex min-h-screen" style={{ backgroundColor:'#f4f5f7' }}>
