@@ -48,7 +48,9 @@ export function AuthProvider({ children }) {
       // Chercher si cet email existe dans partner_members
       let partnerMembers = []
       try {
-        partnerMembers = await xano.getAll('partner_members', { user_email: email })
+        const allMembers = await xano.getAll('partner_members')
+        // Filtre côté client au cas où Xano ne filtre pas par query param
+        partnerMembers = allMembers.filter(m => m.user_email === email)
       } catch (err) {
         console.error('Erreur lookup partner_members:', err)
       }
