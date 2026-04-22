@@ -46,32 +46,42 @@ export function AuthProvider({ children }) {
       const meData = await meResponse.json()
       if (!meResponse.ok) throw new Error('Erreur récupération profil')
 
-      // 3. Vérification du rôle — lookup partner_members
+      // 3. Vérification du rôle via user_type dans cms_users
+      const userType = meData.user_type || 'partner'
+
+      if (selectedRole === 'admin' && userType !== 'admin') {
+        return {
+          success: false,
+          error: 'Ce compte n\'est pas un compte administrateur. Connectez-vous en sélectionnant "Partenaire".',
+        }
+      }
+
+      if (selectedRole === 'partner' && userType === 'admin') {
+        return {
+          success: false,
+          error: 'Ce compte est un compte administrateur. Connectez-vous en sélectionnant "Admin".',
+        }
+      }
+
+      // 4. Si partenaire, chercher le partner_member associé
       let partnerMembers = []
-      try {
-        const allMembers = await xano.getAll('partner_members')
-        partnerMembers = allMembers.filter(m => m.user_email === email)
-      } catch (err) {
-        console.error('Erreur lookup partner_members:', err)
-      }
+      if (selectedRole === 'partner') {
+        try {
+          const allMembers = await xano.getAll('partner_members')
+          partnerMembers = allMembers.filter(m => m.user_email === email)
+        } catch (err) {
+          console.error('Erreur lookup partner_members:', err)
+        }
 
-      const isPartnerMember = partnerMembers.length > 0
-
-      if (selectedRole === 'partner' && !isPartnerMember) {
-        return {
-          success: false,
-          error: 'Ce compte n\'est pas associé à un espace partenaire. Si vous êtes administrateur, connectez-vous en sélectionnant "Admin".',
+        if (partnerMembers.length === 0) {
+          return {
+            success: false,
+            error: 'Ce compte n\'est associé à aucun espace partenaire. Contactez votre administrateur.',
+          }
         }
       }
 
-      if (selectedRole === 'admin' && isPartnerMember) {
-        return {
-          success: false,
-          error: 'Ce compte est associé à un espace partenaire. Connectez-vous en sélectionnant "Partenaire".',
-        }
-      }
-
-      // 4. Connexion validée
+      // 5. Connexion validée
       const userData = {
         email: meData.email || email,
         name: meData.name || '',
@@ -86,7 +96,7 @@ export function AuthProvider({ children }) {
       setUser(userData)
       setRole(selectedRole)
 
-      if (selectedRole === 'partner' && isPartnerMember) {
+      if (selectedRole === 'partner' && partnerMembers.length > 0) {
         const member = partnerMembers[0]
         setPartnerId(member.partner_id)
         setMemberRole(member.role)
