@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import xano from '../../lib/xano'
 import { Toast, useToast, useConfirm, SkeletonStats } from '../../components/SharedUI'
 
-const DIRECTUS_URL = 'https://directus-production-b0c2.up.railway.app'
+const XANO_AUTH_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:IS_IPWIL'
 
 function generateCode() {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
@@ -50,8 +50,17 @@ export default function CodeGenerator() {
 
     setLoading(true)
     try {
-      const authResponse = await fetch(`${DIRECTUS_URL}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: JSON.parse(localStorage.getItem('heka_user')).email, password }) })
-      if (!authResponse.ok) { showToast('Mot de passe incorrect', 'error'); setLoading(false); return }
+      // Vérification du mot de passe via Xano
+      const authToken = localStorage.getItem('heka_auth_token')
+      const verifyResp = await fetch(`${XANO_AUTH_URL}/auth/verify-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ password }),
+      })
+      if (!verifyResp.ok) { showToast('Mot de passe incorrect', 'error'); setLoading(false); return }
 
       const generatedCodes = Array.from({ length: quantity }, () => generateCode())
 

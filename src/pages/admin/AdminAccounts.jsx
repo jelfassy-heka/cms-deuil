@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import xano from '../../lib/xano'
 import { Toast, useToast, useConfirm, SearchInput, SkeletonStats, SkeletonList, useDebounce } from '../../components/SharedUI'
 
-const DIRECTUS_URL = 'https://directus-production-b0c2.up.railway.app'
+const XANO_AUTH_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:IS_IPWIL'
 const roleLabels = { admin:{label:'Admin',bg:'#e8f0fe',text:'#1a2b4a'}, member:{label:'Membre',bg:'#f4f5f7',text:'#8a93a2'} }
 
 export default function AdminAccounts() {
@@ -12,7 +12,7 @@ export default function AdminAccounts() {
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
-  const [form, setForm] = useState({ email:'',password:'',partner_id:'',role:'admin' })
+  const [form, setForm] = useState({ email:'',password:'',partner_id:'',role:'admin',name:'' })
   const { toast, showToast, clearToast } = useToast()
   const { confirm, ConfirmDialog } = useConfirm()
   const debouncedSearch = useDebounce(search)
@@ -29,13 +29,38 @@ export default function AdminAccounts() {
     if (form.password.length<6) { showToast('Mot de passe : 6 caractères minimum','warning'); return }
     setCreating(true)
     try {
-      const adminToken = localStorage.getItem('directus_token')
-      const resp = await fetch(`${DIRECTUS_URL}/users`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${adminToken}`},body:JSON.stringify({email:form.email,password:form.password,role:'8b7e2bca-88e1-4063-9b40-40fa8b70a356'})})
-      if (!resp.ok) { const err=await resp.json(); showToast(err.errors?.[0]?.message?.includes('unique')?'Cet email existe déjà':'Erreur Directus','error'); setCreating(false); return }
-      const newMember = await xano.create('partner_members',{partner_id:parseInt(form.partner_id),user_email:form.email,role:form.role,invited_by:JSON.parse(localStorage.getItem('heka_user')).email,status:'active'})
-      setMembers([...members,newMember])
+      // 1. Créer l'utilisateur dans cms_users via Xano auth/signup
+      const signupResp = await fetch(`${XANO_AUTH_URL}/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: form.email,
+          password: form.password,
+          name: form.name || form.email.split('@')[0],
+          user_type: 'partner',
+          is_first_login: true,
+        }),
+      })
+      if (!signupResp.ok) {
+        const err = await signupResp.json()
+        const msg = err.message || ''
+        showToast(msg.toLowerCase().includes('unique') || msg.toLowerCase().includes('exist') ? 'Cet email existe déjà' : 'Erreur lors de la création du compte', 'error')
+        setCreating(false)
+        return
+      }
+
+      // 2. Créer l'entrée dans partner_members
+      const newMember = await xano.create('partner_members', {
+        partner_id: parseInt(form.partner_id),
+        user_email: form.email,
+        role: form.role,
+        invited_by: JSON.parse(localStorage.getItem('heka_user')).email,
+        status: 'active',
+      })
+      setMembers([...members, newMember])
       showToast(`Compte créé pour ${form.email}`)
-      setForm({email:'',password:'',partner_id:'',role:'admin'}); setShowCreateForm(false)
+      setForm({ email:'', password:'', partner_id:'', role:'admin', name:'' })
+      setShowCreateForm(false)
     } catch(err) { console.error(err); showToast('Erreur','error') }
     finally { setCreating(false) }
   }
@@ -74,8 +99,9 @@ export default function AdminAccounts() {
           <h2 className="font-bold text-lg mb-6" style={{color:'#1a2b4a'}}>Nouveau compte partenaire</h2>
           <form onSubmit={handleCreate}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              <div><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Nom *</label><input type="text" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Prénom Nom" className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7'}} /></div>
               <div><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Email *</label><input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} placeholder="email@entreprise.com" className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7'}} /></div>
-              <div><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Mot de passe *</label><input type="text" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Min. 6 caractères" className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7'}} /></div>
+              <div><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Mot de passe temporaire *</label><input type="text" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Min. 6 caractères" className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7'}} /><p className="text-xs mt-1" style={{color:'#8a93a2'}}>Le partenaire devra le changer à la première connexion</p></div>
               <div><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Partenaire *</label><select value={form.partner_id} onChange={e=>setForm({...form,partner_id:e.target.value})} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7'}}><option value="">Sélectionner...</option>{partners.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
               <div><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Rôle</label><select value={form.role} onChange={e=>setForm({...form,role:e.target.value})} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7'}}><option value="admin">Administrateur</option><option value="member">Membre</option></select></div>
             </div>

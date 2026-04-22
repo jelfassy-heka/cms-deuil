@@ -3,10 +3,10 @@ import xano from '../../lib/xano'
 import { useAuth } from '../../context/AuthContext'
 import { Toast, useToast } from '../../components/SharedUI'
 
-const DIRECTUS_URL = 'https://directus-production-b0c2.up.railway.app'
+const XANO_AUTH_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:IS_IPWIL'
 
 export default function PartnerProfile({ partnerId }) {
-  const { user, memberRole } = useAuth()
+  const { user, memberRole, getAuthToken } = useAuth()
   const [partnerInfo, setPartnerInfo] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -78,30 +78,25 @@ export default function PartnerProfile({ partnerId }) {
 
     setPwSaving(true)
     try {
-      // Vérifier l'ancien mot de passe
-      const authRes = await fetch(`${DIRECTUS_URL}/auth/login`, {
+      const authToken = getAuthToken()
+      const response = await fetch(`${XANO_AUTH_URL}/auth/change-password`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user.email, password: pwForm.current }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          old_password: pwForm.current,
+          new_password: pwForm.newPw,
+        }),
       })
-      if (!authRes.ok) {
-        showToast('Mot de passe actuel incorrect', 'error')
+
+      if (!response.ok) {
+        const err = await response.json()
+        showToast(err.message || 'Mot de passe actuel incorrect', 'error')
         setPwSaving(false)
         return
       }
-      const authData = await authRes.json()
-
-      // Mettre à jour le mot de passe
-      const updateRes = await fetch(`${DIRECTUS_URL}/users/me`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authData.data.access_token}`,
-        },
-        body: JSON.stringify({ password: pwForm.newPw }),
-      })
-
-      if (!updateRes.ok) throw new Error('Erreur mise à jour')
 
       setPwForm({ current: '', newPw: '', confirm: '' })
       showToast('Mot de passe modifié avec succès')
