@@ -2,6 +2,18 @@ import { useState, useEffect } from 'react'
 import xano from '../../lib/xano'
 import { useAuth } from '../../context/AuthContext'
 
+const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
+
+const sendEmail = async (to_email, to_name, template_id, params) => {
+  try {
+    await fetch(`${XANO_BASE}/send-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to_email, to_name, template_id, params: JSON.stringify(params) }),
+    })
+  } catch (err) { console.error('Erreur envoi email:', err) }
+}
+
 const roleLabels = {
   admin: { label: 'Administrateur', bg: '#e8f0fe', text: '#1a2b4a' },
   member: { label: 'Membre', bg: '#f4f5f7', text: '#8a93a2' },
@@ -65,6 +77,15 @@ export default function PartnerTeam({ partnerId }) {
       })
       setMembers([...members, created])
       setInviteSuccess(`Invitation envoyée à ${inviteForm.user_email}`)
+
+      // Envoyer l'email T#11 — Invitation membre
+      await sendEmail(inviteForm.user_email, inviteForm.user_email, 11, {
+        INVITER_NAME: user.email,
+        PARTNER_NAME: partnerInfo?.name || 'Votre entreprise',
+        ROLE: inviteForm.role === 'admin' ? 'Administrateur' : 'Membre',
+        LOGIN_URL: 'https://cms-deuil.vercel.app',
+      })
+
       setInviteForm({ user_email: '', role: 'member' })
       setTimeout(() => setInviteSuccess(''), 4000)
     } catch (err) {

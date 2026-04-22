@@ -3,7 +3,18 @@ import xano from '../../lib/xano'
 import { Toast, useToast, useConfirm, SearchInput, SkeletonStats, SkeletonList, useDebounce } from '../../components/SharedUI'
 
 const XANO_AUTH_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:IS_IPWIL'
+const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
 const roleLabels = { admin:{label:'Admin',bg:'#e8f0fe',text:'#1a2b4a'}, member:{label:'Membre',bg:'#f4f5f7',text:'#8a93a2'} }
+
+const sendEmail = async (to_email, to_name, template_id, params) => {
+  try {
+    await fetch(`${XANO_BASE}/send-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to_email, to_name, template_id, params: JSON.stringify(params) }),
+    })
+  } catch (err) { console.error('Erreur envoi email:', err) }
+}
 
 export default function AdminAccounts() {
   const [partners, setPartners] = useState([])
@@ -29,38 +40,41 @@ export default function AdminAccounts() {
     if (form.password.length<6) { showToast('Mot de passe : 6 caractères minimum','warning'); return }
     setCreating(true)
     try {
-      // 1. Créer l'utilisateur dans cms_users via Xano auth/signup
+      // 1. Créer l'utilisateur via Xano auth
       const signupResp = await fetch(`${XANO_AUTH_URL}/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: form.email,
-          password: form.password,
+          email: form.email, password: form.password,
           name: form.name || form.email.split('@')[0],
-          user_type: 'partner',
-          is_first_login: true,
+          user_type: 'partner', is_first_login: true,
         }),
       })
       if (!signupResp.ok) {
         const err = await signupResp.json()
         const msg = err.message || ''
         showToast(msg.toLowerCase().includes('unique') || msg.toLowerCase().includes('exist') ? 'Cet email existe déjà' : 'Erreur lors de la création du compte', 'error')
-        setCreating(false)
-        return
+        setCreating(false); return
       }
 
-      // 2. Créer l'entrée dans partner_members
+      // 2. Créer l'entrée partner_members
+      const partnerName = getPartnerName(form.partner_id)
       const newMember = await xano.create('partner_members', {
-        partner_id: parseInt(form.partner_id),
-        user_email: form.email,
-        role: form.role,
-        invited_by: JSON.parse(localStorage.getItem('heka_user')).email,
-        status: 'active',
+        partner_id: parseInt(form.partner_id), user_email: form.email,
+        role: form.role, invited_by: JSON.parse(localStorage.getItem('heka_user')).email, status: 'active',
       })
+
+      // 3. Envoyer l'email T#10 — Bienvenue partenaire
+      await sendEmail(form.email, form.name || form.email, 10, {
+        PARTNER_NAME: partnerName,
+        EMAIL: form.email,
+        TEMP_PASSWORD: form.password,
+        LOGIN_URL: 'https://cms-deuil.vercel.app',
+      })
+
       setMembers([...members, newMember])
-      showToast(`Compte créé pour ${form.email}`)
-      setForm({ email:'', password:'', partner_id:'', role:'admin', name:'' })
-      setShowCreateForm(false)
+      showToast(`Compte créé pour ${form.email} — email envoyé`)
+      setForm({ email:'', password:'', partner_id:'', role:'admin', name:'' }); setShowCreateForm(false)
     } catch(err) { console.error(err); showToast('Erreur','error') }
     finally { setCreating(false) }
   }

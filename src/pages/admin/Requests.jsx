@@ -2,6 +2,18 @@ import { useState, useEffect, useMemo } from 'react'
 import xano from '../../lib/xano'
 import { Toast, useToast, SkeletonStats, SkeletonList, Pagination, usePagination, EmptyState } from '../../components/SharedUI'
 
+const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
+
+const sendEmail = async (to_email, to_name, template_id, params) => {
+  try {
+    await fetch(`${XANO_BASE}/send-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to_email, to_name, template_id, params: JSON.stringify(params) }),
+    })
+  } catch (err) { console.error('Erreur envoi email:', err) }
+}
+
 const requestTypes = { codes:{label:'Codes',icon:'🔑',color:'#2BBFB3'}, rdv:{label:'RDV',icon:'📅',color:'#1a2b4a'}, assistance:{label:'Assistance',icon:'🛟',color:'#d97706'}, demo:{label:'Démo',icon:'🎯',color:'#8b5cf6'}, renouvellement:{label:'Renouvellement',icon:'📄',color:'#ef4444'} }
 const statusConfig = { pending:{label:'En attente',bg:'#fef3c7',text:'#d97706'}, in_progress:{label:'En cours',bg:'#e8f0fe',text:'#1a2b4a'}, approved:{label:'Approuvée',bg:'#e8f8f7',text:'#2BBFB3'}, rejected:{label:'Refusée',bg:'#fee2e2',text:'#ef4444'} }
 
@@ -36,6 +48,24 @@ export default function Requests() {
       const updated = await xano.update('code_request', requestId, { request_status: newStatus, processed_at: new Date().toISOString() })
       setRequests(requests.map(r => r.id === requestId ? { ...r, ...updated } : r))
       if (selectedRequest?.id === requestId) setSelectedRequest({ ...selectedRequest, request_status: newStatus })
+
+      // Envoyer T#14 — Demande traitée au partenaire
+      const request = requests.find(r => r.id === requestId)
+      if (request) {
+        const partner = partners.find(p => p.id === request.partner_id)
+        if (partner?.email_contact) {
+          const statusLabelsEmail = { approved: 'Approuvée', rejected: 'Refusée', in_progress: 'En cours de traitement' }
+          const reqType = requestTypes[request.request_type]
+          await sendEmail(partner.email_contact, partner.name, 14, {
+            PARTNER_NAME: partner.name,
+            REQUEST_TYPE: reqType?.label || request.request_type,
+            NEW_STATUS: statusLabelsEmail[newStatus] || newStatus,
+            ADMIN_COMMENT: newStatus === 'approved' ? 'Votre demande a été acceptée. Nous y donnons suite.' : newStatus === 'rejected' ? 'Nous ne sommes pas en mesure de donner suite à cette demande.' : 'Votre demande est en cours de traitement.',
+            LOGIN_URL: 'https://cms-deuil.vercel.app',
+          })
+        }
+      }
+
       showToast(`Demande ${statusConfig[newStatus]?.label?.toLowerCase() || 'mise à jour'}`)
     } catch (err) { console.error(err); showToast('Erreur', 'error') }
   }

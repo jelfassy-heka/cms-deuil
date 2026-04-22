@@ -4,6 +4,17 @@ import { useAuth } from '../../context/AuthContext'
 import { Toast, useToast } from '../../components/SharedUI'
 
 const XANO_AUTH_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:IS_IPWIL'
+const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
+
+const sendEmail = async (to_email, to_name, template_id, params) => {
+  try {
+    await fetch(`${XANO_BASE}/send-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to_email, to_name, template_id, params: JSON.stringify(params) }),
+    })
+  } catch (err) { console.error('Erreur envoi email:', err) }
+}
 
 export default function PartnerProfile({ partnerId }) {
   const { user, memberRole, getAuthToken } = useAuth()
@@ -14,13 +25,11 @@ export default function PartnerProfile({ partnerId }) {
 
   const isAdmin = memberRole === 'admin'
 
-  // Form infos partenaire
   const [form, setForm] = useState({
     name: '', email_contact: '', phone: '', partner_type: '',
     contact_firstname: '', contact_lastname: '', contact_role: '',
   })
 
-  // Form mot de passe
   const [pwForm, setPwForm] = useState({ current: '', newPw: '', confirm: '' })
   const [pwSaving, setPwSaving] = useState(false)
 
@@ -30,10 +39,8 @@ export default function PartnerProfile({ partnerId }) {
         const data = await xano.getOne('partners', partnerId)
         setPartnerInfo(data)
         setForm({
-          name: data.name || '',
-          email_contact: data.email_contact || '',
-          phone: data.phone || '',
-          partner_type: data.partner_type || 'entreprise',
+          name: data.name || '', email_contact: data.email_contact || '',
+          phone: data.phone || '', partner_type: data.partner_type || 'entreprise',
           contact_firstname: data.contact_firstname || '',
           contact_lastname: data.contact_lastname || '',
           contact_role: data.contact_role || '',
@@ -46,64 +53,48 @@ export default function PartnerProfile({ partnerId }) {
 
   const handleSaveInfo = async (e) => {
     e.preventDefault()
-    if (!form.name || !form.email_contact) {
-      showToast('Le nom et l\'email sont requis', 'warning')
-      return
-    }
+    if (!form.name || !form.email_contact) { showToast('Le nom et l\'email sont requis', 'warning'); return }
     setSaving(true)
     try {
       const updated = await xano.update('partners', partnerId, form)
       setPartnerInfo(updated)
       showToast('Informations mises à jour')
-    } catch (err) {
-      console.error(err)
-      showToast('Erreur lors de la mise à jour', 'error')
-    } finally { setSaving(false) }
+    } catch (err) { console.error(err); showToast('Erreur lors de la mise à jour', 'error') }
+    finally { setSaving(false) }
   }
 
   const handleChangePassword = async (e) => {
     e.preventDefault()
-    if (!pwForm.current || !pwForm.newPw || !pwForm.confirm) {
-      showToast('Tous les champs sont requis', 'warning')
-      return
-    }
-    if (pwForm.newPw.length < 8) {
-      showToast('Le mot de passe doit contenir au moins 8 caractères', 'warning')
-      return
-    }
-    if (pwForm.newPw !== pwForm.confirm) {
-      showToast('Les mots de passe ne correspondent pas', 'warning')
-      return
-    }
+    if (!pwForm.current || !pwForm.newPw || !pwForm.confirm) { showToast('Tous les champs sont requis', 'warning'); return }
+    if (pwForm.newPw.length < 8) { showToast('Le mot de passe doit contenir au moins 8 caractères', 'warning'); return }
+    if (pwForm.newPw !== pwForm.confirm) { showToast('Les mots de passe ne correspondent pas', 'warning'); return }
 
     setPwSaving(true)
     try {
       const authToken = getAuthToken()
       const response = await fetch(`${XANO_AUTH_URL}/auth/change-password`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          old_password: pwForm.current,
-          new_password: pwForm.newPw,
-        }),
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+        body: JSON.stringify({ old_password: pwForm.current, new_password: pwForm.newPw }),
       })
 
       if (!response.ok) {
         const err = await response.json()
         showToast(err.message || 'Mot de passe actuel incorrect', 'error')
-        setPwSaving(false)
-        return
+        setPwSaving(false); return
       }
+
+      // Envoyer l'email T#12 — Confirmation changement MDP
+      const now = new Date()
+      await sendEmail(user.email, user.name || user.email, 12, {
+        EMAIL: user.email,
+        DATE_HEURE: now.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      })
 
       setPwForm({ current: '', newPw: '', confirm: '' })
       showToast('Mot de passe modifié avec succès')
-    } catch (err) {
-      console.error(err)
-      showToast('Erreur lors du changement de mot de passe', 'error')
-    } finally { setPwSaving(false) }
+    } catch (err) { console.error(err); showToast('Erreur lors du changement de mot de passe', 'error') }
+    finally { setPwSaving(false) }
   }
 
   if (loading) return <div className="flex items-center justify-center h-64"><p style={{ color: '#8a93a2' }}>Chargement...</p></div>
@@ -120,148 +111,49 @@ export default function PartnerProfile({ partnerId }) {
         </p>
       </div>
 
-      {/* Carte résumé */}
-      <div className="bg-white rounded-2xl p-5 mb-6 flex items-center gap-4"
-        style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-        <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold flex-shrink-0"
-          style={{ backgroundColor: '#2BBFB3' }}>
-          {partnerInfo?.name?.[0] || '?'}
-        </div>
+      <div className="bg-white rounded-2xl p-5 mb-6 flex items-center gap-4" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
+        <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold flex-shrink-0" style={{ backgroundColor: '#2BBFB3' }}>{partnerInfo?.name?.[0] || '?'}</div>
         <div className="flex-1 min-w-0">
           <p className="text-lg font-bold truncate" style={{ color: '#1a2b4a' }}>{partnerInfo?.name}</p>
-          <p className="text-sm" style={{ color: '#8a93a2' }}>
-            {partnerInfo?.partner_type || 'entreprise'} · {user.email} · {isAdmin ? 'Administrateur' : 'Membre'}
-          </p>
+          <p className="text-sm" style={{ color: '#8a93a2' }}>{partnerInfo?.partner_type || 'entreprise'} · {user.email} · {isAdmin ? 'Administrateur' : 'Membre'}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Section 1 — Infos partenaire */}
-        <div className="bg-white rounded-2xl p-5 md:p-6"
-          style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
+        <div className="bg-white rounded-2xl p-5 md:p-6" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
           <h2 className="font-bold text-base mb-4" style={{ color: '#1a2b4a' }}>Informations de l'entreprise</h2>
           <form onSubmit={handleSaveInfo}>
-            {[
-              { key: 'name', label: 'Nom de l\'entreprise', required: true },
-              { key: 'email_contact', label: 'Email de contact', type: 'email', required: true },
-              { key: 'phone', label: 'Téléphone', type: 'tel' },
-            ].map(f => (
+            {[{key:'name',label:'Nom de l\'entreprise',required:true},{key:'email_contact',label:'Email de contact',type:'email',required:true},{key:'phone',label:'Téléphone',type:'tel'}].map(f=>(
               <div key={f.key} className="mb-4">
-                <label className="block text-sm font-semibold mb-1.5" style={{ color: '#1a2b4a' }}>
-                  {f.label}{f.required ? ' *' : ''}
-                </label>
-                <input
-                  type={f.type || 'text'}
-                  value={form[f.key]}
-                  onChange={e => setForm({ ...form, [f.key]: e.target.value })}
-                  disabled={!isAdmin}
-                  className="w-full px-4 py-3 rounded-2xl text-sm outline-none"
-                  style={{
-                    backgroundColor: isAdmin ? '#f4f5f7' : '#fafafa',
-                    color: '#1a2b4a',
-                    opacity: isAdmin ? 1 : 0.6,
-                  }}
-                />
+                <label className="block text-sm font-semibold mb-1.5" style={{color:'#1a2b4a'}}>{f.label}{f.required?' *':''}</label>
+                <input type={f.type||'text'} value={form[f.key]} onChange={e=>setForm({...form,[f.key]:e.target.value})} disabled={!isAdmin} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:isAdmin?'#f4f5f7':'#fafafa',color:'#1a2b4a',opacity:isAdmin?1:0.6}} />
               </div>
             ))}
-
-            <div className="mb-4">
-              <label className="block text-sm font-semibold mb-1.5" style={{ color: '#1a2b4a' }}>Type</label>
-              <select
-                value={form.partner_type}
-                onChange={e => setForm({ ...form, partner_type: e.target.value })}
-                disabled={!isAdmin}
-                className="w-full px-4 py-3 rounded-2xl text-sm outline-none"
-                style={{ backgroundColor: isAdmin ? '#f4f5f7' : '#fafafa', color: '#1a2b4a' }}>
-                <option value="entreprise">Entreprise</option>
-                <option value="mutuelle">Mutuelle</option>
-                <option value="association">Association</option>
-                <option value="collectivité">Collectivité</option>
-              </select>
-            </div>
-
-            <p className="text-xs font-semibold mb-3 mt-6" style={{ color: '#8a93a2' }}>CONTACT PRINCIPAL</p>
+            <div className="mb-4"><label className="block text-sm font-semibold mb-1.5" style={{color:'#1a2b4a'}}>Type</label><select value={form.partner_type} onChange={e=>setForm({...form,partner_type:e.target.value})} disabled={!isAdmin} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:isAdmin?'#f4f5f7':'#fafafa',color:'#1a2b4a'}}><option value="entreprise">Entreprise</option><option value="mutuelle">Mutuelle</option><option value="association">Association</option><option value="collectivité">Collectivité</option></select></div>
+            <p className="text-xs font-semibold mb-3 mt-6" style={{color:'#8a93a2'}}>CONTACT PRINCIPAL</p>
             <div className="grid grid-cols-2 gap-3 mb-4">
-              <div>
-                <label className="block text-xs font-semibold mb-1" style={{ color: '#1a2b4a' }}>Prénom</label>
-                <input value={form.contact_firstname}
-                  onChange={e => setForm({ ...form, contact_firstname: e.target.value })}
-                  disabled={!isAdmin}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
-                  style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }} />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1" style={{ color: '#1a2b4a' }}>Nom</label>
-                <input value={form.contact_lastname}
-                  onChange={e => setForm({ ...form, contact_lastname: e.target.value })}
-                  disabled={!isAdmin}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
-                  style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }} />
-              </div>
+              <div><label className="block text-xs font-semibold mb-1" style={{color:'#1a2b4a'}}>Prénom</label><input value={form.contact_firstname} onChange={e=>setForm({...form,contact_firstname:e.target.value})} disabled={!isAdmin} className="w-full px-3 py-2.5 rounded-xl text-sm outline-none" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}} /></div>
+              <div><label className="block text-xs font-semibold mb-1" style={{color:'#1a2b4a'}}>Nom</label><input value={form.contact_lastname} onChange={e=>setForm({...form,contact_lastname:e.target.value})} disabled={!isAdmin} className="w-full px-3 py-2.5 rounded-xl text-sm outline-none" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}} /></div>
             </div>
-            <div className="mb-4">
-              <label className="block text-xs font-semibold mb-1" style={{ color: '#1a2b4a' }}>Fonction</label>
-              <input value={form.contact_role}
-                onChange={e => setForm({ ...form, contact_role: e.target.value })}
-                disabled={!isAdmin}
-                className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
-                style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }} />
-            </div>
-
-            {isAdmin && (
-              <button type="submit" disabled={saving}
-                className="w-full py-3 rounded-2xl text-white text-sm font-semibold"
-                style={{ backgroundColor: saving ? '#8a93a2' : '#2BBFB3' }}>
-                {saving ? 'Enregistrement...' : 'Enregistrer les modifications'}
-              </button>
-            )}
+            <div className="mb-4"><label className="block text-xs font-semibold mb-1" style={{color:'#1a2b4a'}}>Fonction</label><input value={form.contact_role} onChange={e=>setForm({...form,contact_role:e.target.value})} disabled={!isAdmin} className="w-full px-3 py-2.5 rounded-xl text-sm outline-none" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}} /></div>
+            {isAdmin&&<button type="submit" disabled={saving} className="w-full py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor:saving?'#8a93a2':'#2BBFB3'}}>{saving?'Enregistrement...':'Enregistrer les modifications'}</button>}
           </form>
         </div>
 
-        {/* Section 2 — Mot de passe */}
         <div>
-          <div className="bg-white rounded-2xl p-5 md:p-6"
-            style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-            <h2 className="font-bold text-base mb-4" style={{ color: '#1a2b4a' }}>Changer le mot de passe</h2>
+          <div className="bg-white rounded-2xl p-5 md:p-6" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
+            <h2 className="font-bold text-base mb-4" style={{color:'#1a2b4a'}}>Changer le mot de passe</h2>
             <form onSubmit={handleChangePassword}>
-              <div className="mb-4">
-                <label className="block text-sm font-semibold mb-1.5" style={{ color: '#1a2b4a' }}>Mot de passe actuel</label>
-                <input type="password" value={pwForm.current}
-                  onChange={e => setPwForm({ ...pwForm, current: e.target.value })}
-                  className="w-full px-4 py-3 rounded-2xl text-sm outline-none"
-                  style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }} />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-semibold mb-1.5" style={{ color: '#1a2b4a' }}>Nouveau mot de passe</label>
-                <input type="password" value={pwForm.newPw}
-                  onChange={e => setPwForm({ ...pwForm, newPw: e.target.value })}
-                  className="w-full px-4 py-3 rounded-2xl text-sm outline-none"
-                  style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }} />
-                <p className="text-xs mt-1" style={{ color: '#8a93a2' }}>8 caractères minimum</p>
-              </div>
-              <div className="mb-6">
-                <label className="block text-sm font-semibold mb-1.5" style={{ color: '#1a2b4a' }}>Confirmer</label>
-                <input type="password" value={pwForm.confirm}
-                  onChange={e => setPwForm({ ...pwForm, confirm: e.target.value })}
-                  className="w-full px-4 py-3 rounded-2xl text-sm outline-none"
-                  style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }} />
-                {pwForm.confirm && pwForm.newPw !== pwForm.confirm && (
-                  <p className="text-xs mt-1" style={{ color: '#ef4444' }}>Les mots de passe ne correspondent pas</p>
-                )}
-              </div>
-              <button type="submit" disabled={pwSaving}
-                className="w-full py-3 rounded-2xl text-white text-sm font-semibold"
-                style={{ backgroundColor: pwSaving ? '#8a93a2' : '#1a2b4a' }}>
-                {pwSaving ? 'Modification...' : 'Modifier le mot de passe'}
-              </button>
+              <div className="mb-4"><label className="block text-sm font-semibold mb-1.5" style={{color:'#1a2b4a'}}>Mot de passe actuel</label><input type="password" value={pwForm.current} onChange={e=>setPwForm({...pwForm,current:e.target.value})} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}} /></div>
+              <div className="mb-4"><label className="block text-sm font-semibold mb-1.5" style={{color:'#1a2b4a'}}>Nouveau mot de passe</label><input type="password" value={pwForm.newPw} onChange={e=>setPwForm({...pwForm,newPw:e.target.value})} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}} /><p className="text-xs mt-1" style={{color:'#8a93a2'}}>8 caractères minimum</p></div>
+              <div className="mb-6"><label className="block text-sm font-semibold mb-1.5" style={{color:'#1a2b4a'}}>Confirmer</label><input type="password" value={pwForm.confirm} onChange={e=>setPwForm({...pwForm,confirm:e.target.value})} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}} />{pwForm.confirm&&pwForm.newPw!==pwForm.confirm&&<p className="text-xs mt-1" style={{color:'#ef4444'}}>Les mots de passe ne correspondent pas</p>}</div>
+              <button type="submit" disabled={pwSaving} className="w-full py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor:pwSaving?'#8a93a2':'#1a2b4a'}}>{pwSaving?'Modification...':'Modifier le mot de passe'}</button>
             </form>
           </div>
-
-          {/* Info compte */}
-          <div className="rounded-2xl p-4 mt-4" style={{ backgroundColor: '#f4f5f7' }}>
-            <p className="text-xs font-semibold mb-2" style={{ color: '#8a93a2' }}>INFORMATIONS DU COMPTE</p>
-            <p className="text-sm" style={{ color: '#1a2b4a' }}>Email : {user.email}</p>
-            <p className="text-sm" style={{ color: '#1a2b4a' }}>Rôle : {isAdmin ? 'Administrateur' : 'Membre'}</p>
+          <div className="rounded-2xl p-4 mt-4" style={{backgroundColor:'#f4f5f7'}}>
+            <p className="text-xs font-semibold mb-2" style={{color:'#8a93a2'}}>INFORMATIONS DU COMPTE</p>
+            <p className="text-sm" style={{color:'#1a2b4a'}}>Email : {user.email}</p>
+            <p className="text-sm" style={{color:'#1a2b4a'}}>Rôle : {isAdmin ? 'Administrateur' : 'Membre'}</p>
           </div>
         </div>
       </div>

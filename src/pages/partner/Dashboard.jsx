@@ -9,6 +9,19 @@ import PartnerProfile from './PartnerProfile'
 import PartnerHelp from './PartnerHelp'
 import PartnerNotifications from './PartnerNotifications'
 
+const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
+const ADMIN_EMAIL = 'jelfassy@heka-app.fr'
+
+const sendEmail = async (to_email, to_name, template_id, params) => {
+  try {
+    await fetch(`${XANO_BASE}/send-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to_email, to_name, template_id, params: JSON.stringify(params) }),
+    })
+  } catch (err) { console.error('Erreur envoi email:', err) }
+}
+
 const requestTypes = [
   { type:'codes', label:'Demande de codes', icon:'🔑', description:'Demander des codes supplémentaires', color:'#2BBFB3' },
   { type:'rdv', label:'Demande de RDV', icon:'📅', description:'Planifier un rendez-vous', color:'#1a2b4a' },
@@ -119,6 +132,28 @@ export default function PartnerDashboard() {
         preferred_date: formData.preferred_date || null, preferred_date_2: formData.preferred_date_2 || null,
         partner_id: partnerId,
       })
+
+      const reqType = requestTypes.find(t => t.type === formData.request_type)
+      const reqDetail = formData.reason || formData.message || formData.quantity ? `${formData.quantity} codes` : '—'
+      const now = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
+
+      // T#13 — Accusé de réception au partenaire
+      await sendEmail(user.email, user.name || user.email, 13, {
+        PARTNER_NAME: partnerName,
+        REQUEST_TYPE: reqType?.label || formData.request_type,
+        REQUEST_DETAIL: reqDetail,
+        DATE: now,
+        LOGIN_URL: 'https://cms-deuil.vercel.app',
+      })
+
+      // T#15 — Alerte admin
+      await sendEmail(ADMIN_EMAIL, 'Admin Héka', 15, {
+        PARTNER_NAME: partnerName,
+        REQUEST_TYPE: reqType?.label || formData.request_type,
+        REQUEST_DETAIL: reqDetail,
+        LINK_CMS: 'https://cms-deuil.vercel.app',
+      })
+
       setRequests([created, ...requests]); setActiveRequestType(null); setActivePage('requests')
     } catch (err) { console.error('Erreur:', err) }
   }
