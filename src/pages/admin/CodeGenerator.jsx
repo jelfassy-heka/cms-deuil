@@ -52,7 +52,7 @@ export default function CodeGenerator() {
     try {
       // Vérification du mot de passe via Xano
       const authToken = localStorage.getItem('heka_auth_token')
-      const verifyResp = await fetch(`${XANO_AUTH_URL}/auth/verify-password`, {
+      const verifyResp = await fetch(`${XANO_AUTH_URL}/verify-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

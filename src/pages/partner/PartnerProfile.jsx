@@ -72,7 +72,7 @@ export default function PartnerProfile({ partnerId }) {
     setPwSaving(true)
     try {
       const authToken = getAuthToken()
-      const response = await fetch(`${XANO_AUTH_URL}/auth/change-password`, {
+      const response = await fetch(`${XANO_AUTH_URL}/change-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
         body: JSON.stringify({ old_password: pwForm.current, new_password: pwForm.newPw }),
