@@ -152,8 +152,8 @@ export default function PartnerNotifications({ data, onNavigate }) {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-12 w-80 bg-white rounded-2xl overflow-hidden z-50 animate-slide-down"
-          style={{ boxShadow: '0 20px 60px rgba(26,43,74,0.15)', border: '1px solid #f4f5f7' }}>
+        <div className="absolute right-0 top-12 w-96 max-w-[calc(100vw-2rem)] bg-white rounded-2xl overflow-hidden z-50 animate-slide-down"
+          style={{ boxShadow: '0 20px 60px rgba(26,43,74,0.15)', border: '1px solid #f4f5f7', minWidth: '340px' }}>
           <div className="px-4 py-3 flex items-center justify-between"
             style={{ borderBottom: '1px solid #f4f5f7' }}>
             <p className="text-sm font-semibold" style={{ color: '#1a2b4a' }}>Notifications</p>
@@ -174,18 +174,18 @@ export default function PartnerNotifications({ data, onNavigate }) {
               notifications.map((notif, idx) => (
                 <div key={notif.id}
                   onClick={() => handleClick(notif)}
-                  className="flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-gray-50"
+                  className="flex items-start gap-3 px-5 py-4 cursor-pointer transition-colors hover:bg-gray-50"
                   style={{ borderBottom: idx < notifications.length - 1 ? '1px solid #f4f5f7' : 'none' }}>
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
                     style={{ backgroundColor: notif.bg }}>
                     {notif.icon}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium" style={{ color: '#1a2b4a' }}>{notif.label}</p>
-                    <p className="text-xs mt-0.5" style={{ color: '#8a93a2' }}>{notif.detail}</p>
+                  <div className="flex-1 min-w-0 w-full">
+                    <p className="text-sm font-medium break-words" style={{ color: '#1a2b4a', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{notif.label}</p>
+                    <p className="text-xs mt-0.5 break-words" style={{ color: '#8a93a2', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{notif.detail}</p>
                   </div>
                   <button onClick={(e) => handleDismiss(notif.id, e)}
-                    className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 hover:bg-gray-100"
+                    className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 hover:bg-gray-100"
                     style={{ color: '#8a93a2' }} title="Masquer">
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
                       <path d="M2 2l6 6M8 2l-6 6" stroke="#8a93a2" strokeWidth="1.3" strokeLinecap="round"/>
