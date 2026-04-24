@@ -1,57 +1,45 @@
-const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
+const BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
+
+// Toggle data source : 'live' (prod) ou 'dev' (test)
+// Configuré dans Vercel → Settings → Environment Variables → VITE_DATASOURCE
+const DATASOURCE = import.meta.env.VITE_DATASOURCE || 'live'
+
+const getHeaders = (extra = {}) => {
+  const headers = { ...extra }
+  if (DATASOURCE && DATASOURCE !== 'live') {
+    headers['X-Data-Source'] = DATASOURCE
+  }
+  return headers
+}
 
 const xano = {
-  // GET all records, with optional query params
   async getAll(table, params = {}) {
-    const query = Object.entries(params)
-      .filter(([, v]) => v !== undefined && v !== null && v !== '')
-      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
-      .join('&')
-    const url = `${XANO_BASE}/${table}${query ? `?${query}` : ''}`
-    const resp = await fetch(url)
-    if (!resp.ok) throw new Error(`GET ${table} failed: ${resp.status}`)
-    const data = await resp.json()
-    return Array.isArray(data) ? data : data.items || []
+    const query = Object.entries(params).filter(([,v])=>v!==undefined&&v!==null).map(([k,v])=>`${k}=${encodeURIComponent(v)}`).join('&')
+    const url = `${BASE}/${table}${query ? '?' + query : ''}`
+    const res = await fetch(url, { headers: getHeaders() })
+    if (!res.ok) throw new Error(`GET ${table} failed: ${res.status}`)
+    return res.json()
   },
-
-  // GET single record by id
   async getOne(table, id) {
-    const resp = await fetch(`${XANO_BASE}/${table}/${id}`)
-    if (!resp.ok) throw new Error(`GET ${table}/${id} failed: ${resp.status}`)
-    return resp.json()
+    const res = await fetch(`${BASE}/${table}/${id}`, { headers: getHeaders() })
+    if (!res.ok) throw new Error(`GET ${table}/${id} failed: ${res.status}`)
+    return res.json()
   },
-
-  // POST create record
   async create(table, data) {
-    const resp = await fetch(`${XANO_BASE}/${table}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    })
-    if (!resp.ok) throw new Error(`POST ${table} failed: ${resp.status}`)
-    return resp.json()
+    const res = await fetch(`${BASE}/${table}`, { method:'POST', headers: getHeaders({'Content-Type':'application/json'}), body:JSON.stringify(data) })
+    if (!res.ok) throw new Error(`POST ${table} failed: ${res.status}`)
+    return res.json()
   },
-
-  // PATCH update record
   async update(table, id, data) {
-    const resp = await fetch(`${XANO_BASE}/${table}/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    })
-    if (!resp.ok) throw new Error(`PATCH ${table}/${id} failed: ${resp.status}`)
-    return resp.json()
+    const res = await fetch(`${BASE}/${table}/${id}`, { method:'PATCH', headers: getHeaders({'Content-Type':'application/json'}), body:JSON.stringify(data) })
+    if (!res.ok) throw new Error(`PATCH ${table}/${id} failed: ${res.status}`)
+    return res.json()
   },
-
-  // DELETE record
   async remove(table, id) {
-    const resp = await fetch(`${XANO_BASE}/${table}/${id}`, {
-      method: 'DELETE',
-    })
-    if (!resp.ok) throw new Error(`DELETE ${table}/${id} failed: ${resp.status}`)
+    const res = await fetch(`${BASE}/${table}/${id}`, { method:'DELETE', headers: getHeaders() })
+    if (!res.ok) throw new Error(`DELETE ${table}/${id} failed: ${res.status}`)
     return true
   },
 }
 
 export default xano
-export { XANO_BASE }

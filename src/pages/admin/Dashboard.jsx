@@ -131,6 +131,8 @@ export default function AdminDashboard() {
     codes: datasets.codes.length,
     pending: datasets.requests.filter(r => r.request_status === 'pending').length,
     users: datasets.users.length,
+    codesUsed: datasets.codes.filter(c => c.used).length,
+    activationRate: datasets.codes.length > 0 ? Math.round(datasets.codes.filter(c => c.used).length / datasets.codes.length * 100) : 0,
   }), [datasets])
 
   // Sparklines calculées depuis les datasets
@@ -426,6 +428,50 @@ export default function AdminDashboard() {
                   {!loading && <SparklineChart data={stat.sparkline} color={stat.color} height={32} />}
                 </div>
               ))}
+            </div>
+
+            {/* Taux de conversion */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mb-8">
+              <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#8a93a2' }}>Taux d'activation des codes</p>
+                    <p className="text-3xl font-bold" style={{ color: '#2BBFB3' }}>{loading ? '—' : `${stats.activationRate}%`}</p>
+                  </div>
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#e8f8f7' }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2BBFB3" strokeWidth="2" strokeLinecap="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  </div>
+                </div>
+                {!loading && (
+                  <div className="flex items-center gap-4 text-xs" style={{ color: '#8a93a2' }}>
+                    <span><strong style={{ color: '#1a2b4a' }}>{stats.codesUsed}</strong> activés</span>
+                    <span>sur <strong style={{ color: '#1a2b4a' }}>{stats.codes}</strong> générés</span>
+                  </div>
+                )}
+                {!loading && (
+                  <div className="mt-3 rounded-full overflow-hidden h-2" style={{ backgroundColor: '#f4f5f7' }}>
+                    <div className="h-full rounded-full transition-all" style={{ width: `${stats.activationRate}%`, backgroundColor: '#2BBFB3' }} />
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#8a93a2' }}>Conversion essai → payant</p>
+                    <p className="text-3xl font-bold" style={{ color: '#1a2b4a' }}>—</p>
+                  </div>
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ backgroundColor: '#e8f0fe' }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1a2b4a" strokeWidth="2" strokeLinecap="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                  </div>
+                </div>
+                <p className="text-xs" style={{ color: '#8a93a2', lineHeight: '1.5' }}>
+                  Disponible prochainement — nécessite la connexion avec la table des abonnements.
+                </p>
+                <div className="mt-3 rounded-full overflow-hidden h-2" style={{ backgroundColor: '#f4f5f7' }}>
+                  <div className="h-full rounded-full" style={{ width: '0%', backgroundColor: '#1a2b4a' }} />
+                </div>
+              </div>
             </div>
 
             {/* Section activité récente */}

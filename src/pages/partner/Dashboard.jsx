@@ -12,6 +12,10 @@ import PartnerNotifications from './PartnerNotifications'
 const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
 const ADMIN_EMAIL = 'jelfassy@heka-app.fr'
 
+// ─── URL de prise de RDV Google Calendar ───
+// Pour configurer : Google Calendar → Créer un "Horaires de rendez-vous" → Copier le lien de la page de réservation
+const GOOGLE_CALENDAR_BOOKING_URL = 'https://calendar.app.google/RfrDN99k42atgAKs5' // ← Remplacer par votre URL
+
 const sendEmail = async (to_email, to_name, template_id, params) => {
   try {
     await fetch(`${XANO_BASE}/send-email`, {
@@ -22,28 +26,86 @@ const sendEmail = async (to_email, to_name, template_id, params) => {
   } catch (err) { console.error('Erreur envoi email:', err) }
 }
 
+// ─── SVG Icons pour les types de demandes ───
+function RequestTypeIcon({ type, size = 20, color = 'currentColor' }) {
+  switch (type) {
+    case 'codes': return (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="12" cy="16" r="1"/></svg>)
+    case 'rdv': return (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>)
+    case 'assistance': return (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>)
+    case 'demo': return (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>)
+    case 'renouvellement': return (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>)
+    default: return null
+  }
+}
+
 const requestTypes = [
-  { type:'codes', label:'Demande de codes', icon:'🔑', description:'Demander des codes supplémentaires', color:'#2BBFB3' },
-  { type:'rdv', label:'Demande de RDV', icon:'📅', description:'Planifier un rendez-vous', color:'#1a2b4a' },
-  { type:'assistance', label:'Demande d\'assistance', icon:'🛟', description:'Obtenir de l\'aide', color:'#d97706' },
-  { type:'demo', label:'Demande de démo', icon:'🎯', description:'Découvrir les fonctionnalités', color:'#8b5cf6' },
-  { type:'renouvellement', label:'Renouvellement contrat', icon:'📄', description:'Renouveler votre contrat', color:'#ef4444' },
+  { type:'codes', label:'Demande de codes', description:'Demander des codes d\'accès supplémentaires pour vos collaborateurs', color:'#2BBFB3' },
+  { type:'rdv', label:'Prendre rendez-vous', description:'Planifier un rendez-vous avec l\'équipe Héka via notre agenda', color:'#1a2b4a', isCalendar: true },
+  { type:'assistance', label:'Assistance', description:'Obtenir de l\'aide sur l\'utilisation de la plateforme ou signaler un problème', color:'#d97706' },
+  { type:'demo', label:'Demander une démo', description:'Découvrir les fonctionnalités d\'Héka en visio avec notre équipe', color:'#8b5cf6', isCalendar: true },
+  { type:'renouvellement', label:'Renouvellement', description:'Initier le renouvellement ou la modification de votre contrat', color:'#ef4444' },
 ]
 
 function RequestForm({ type, onSubmit, onCancel }) {
   const [form, setForm] = useState({ quantity:1, reason:'', preferred_date:'', preferred_date_2:'', message:'' })
   const handleSubmit = e => { e.preventDefault(); onSubmit({ ...form, request_type: type.type }) }
 
+  // Pour les types RDV et Démo → redirection Google Calendar
+  if (type.isCalendar) {
+    return (
+      <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-8 mb-6" style={{ boxShadow:'0 4px 24px rgba(43,191,179,0.08)' }}>
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ backgroundColor: type.color + '15' }}>
+            <RequestTypeIcon type={type.type} size={22} color={type.color} />
+          </div>
+          <div><h2 className="font-bold text-base md:text-lg" style={{color:'#1a2b4a'}}>{type.label}</h2><p className="text-sm" style={{color:'#8a93a2'}}>{type.description}</p></div>
+        </div>
+
+        <div className="rounded-2xl p-5 mb-6" style={{ backgroundColor: '#f8fafb' }}>
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: '#e8f8f7' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2BBFB3" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            </div>
+            <div>
+              <p className="font-semibold text-sm mb-1" style={{ color: '#1a2b4a' }}>Réservez un créneau en ligne</p>
+              <p className="text-sm" style={{ color: '#8a93a2', lineHeight: '1.6' }}>
+                Choisissez directement un créneau qui vous convient dans notre agenda. Vous recevrez une confirmation par email avec le lien de la visio.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Message (optionnel)</label>
+          <textarea value={form.message} onChange={e=>setForm({...form,message:e.target.value})} rows={2} placeholder="Précisez le sujet ou vos attentes..." className="w-full px-4 py-3 rounded-2xl text-sm outline-none resize-none" style={{backgroundColor:'#f4f5f7'}} />
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3">
+          <a href={GOOGLE_CALENDAR_BOOKING_URL} target="_blank" rel="noreferrer"
+            onClick={() => { onSubmit({ ...form, request_type: type.type, message: form.message || `${type.label} via agenda` }) }}
+            className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor: type.color}}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            Choisir un créneau →
+          </a>
+          <button type="button" onClick={onCancel} className="px-6 py-3 rounded-2xl text-sm font-semibold" style={{backgroundColor:'#f4f5f7',color:'#8a93a2'}}>Annuler</button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-8 mb-6" style={{ boxShadow:'0 4px 24px rgba(43,191,179,0.08)' }}>
-      <div className="flex items-center gap-3 mb-6"><span className="text-2xl">{type.icon}</span><div><h2 className="font-bold text-base md:text-lg" style={{color:'#1a2b4a'}}>{type.label}</h2><p className="text-sm" style={{color:'#8a93a2'}}>{type.description}</p></div></div>
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ backgroundColor: type.color + '15' }}>
+          <RequestTypeIcon type={type.type} size={22} color={type.color} />
+        </div>
+        <div><h2 className="font-bold text-base md:text-lg" style={{color:'#1a2b4a'}}>{type.label}</h2><p className="text-sm" style={{color:'#8a93a2'}}>{type.description}</p></div>
+      </div>
       <form onSubmit={handleSubmit}>
         {type.type==='codes'&&<><div className="mb-4"><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Nombre de codes</label><input type="number" min="1" value={form.quantity} onChange={e=>setForm({...form,quantity:parseInt(e.target.value)})} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7'}} /></div><div className="mb-6"><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Motif</label><textarea value={form.reason} onChange={e=>setForm({...form,reason:e.target.value})} rows={3} className="w-full px-4 py-3 rounded-2xl text-sm outline-none resize-none" style={{backgroundColor:'#f4f5f7'}} /></div></>}
-        {type.type==='rdv'&&<><div className="mb-4"><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Créneau préféré</label><input type="datetime-local" value={form.preferred_date} onChange={e=>setForm({...form,preferred_date:e.target.value})} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7'}} /></div><div className="mb-4"><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Créneau alternatif</label><input type="datetime-local" value={form.preferred_date_2} onChange={e=>setForm({...form,preferred_date_2:e.target.value})} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7'}} /></div><div className="mb-6"><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Objet</label><textarea value={form.message} onChange={e=>setForm({...form,message:e.target.value})} rows={3} className="w-full px-4 py-3 rounded-2xl text-sm outline-none resize-none" style={{backgroundColor:'#f4f5f7'}} /></div></>}
         {type.type==='assistance'&&<><div className="mb-4"><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Type de problème</label><select value={form.reason} onChange={e=>setForm({...form,reason:e.target.value})} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7'}}><option value="">Sélectionnez...</option><option value="technique">Technique</option><option value="codes">Codes</option><option value="acces">Accès</option><option value="facturation">Facturation</option><option value="autre">Autre</option></select></div><div className="mb-6"><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Description</label><textarea value={form.message} onChange={e=>setForm({...form,message:e.target.value})} rows={4} className="w-full px-4 py-3 rounded-2xl text-sm outline-none resize-none" style={{backgroundColor:'#f4f5f7'}} /></div></>}
-        {type.type==='demo'&&<><div className="mb-4"><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Créneau</label><input type="datetime-local" value={form.preferred_date} onChange={e=>setForm({...form,preferred_date:e.target.value})} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7'}} /></div><div className="mb-6"><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Message</label><textarea value={form.message} onChange={e=>setForm({...form,message:e.target.value})} rows={3} className="w-full px-4 py-3 rounded-2xl text-sm outline-none resize-none" style={{backgroundColor:'#f4f5f7'}} /></div></>}
-        {type.type==='renouvellement'&&<><div className="rounded-2xl p-4 mb-6" style={{backgroundColor:'#fef3c7'}}><p className="text-sm font-medium" style={{color:'#d97706'}}>⚠️ Cette demande déclenchera une révision de votre contrat.</p></div><div className="mb-6"><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Message</label><textarea value={form.message} onChange={e=>setForm({...form,message:e.target.value})} rows={3} className="w-full px-4 py-3 rounded-2xl text-sm outline-none resize-none" style={{backgroundColor:'#f4f5f7'}} /></div></>}
-        <div className="flex flex-col sm:flex-row gap-3"><button type="submit" className="px-6 py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor:type.color}}>Envoyer →</button><button type="button" onClick={onCancel} className="px-6 py-3 rounded-2xl text-sm font-semibold" style={{backgroundColor:'#f4f5f7',color:'#8a93a2'}}>Annuler</button></div>
+        {type.type==='renouvellement'&&<><div className="rounded-2xl p-4 mb-6" style={{backgroundColor:'#fef3c7'}}><p className="text-sm font-medium" style={{color:'#d97706'}}>Cette demande déclenchera une révision de votre contrat par notre équipe.</p></div><div className="mb-6"><label className="block text-sm font-semibold mb-2" style={{color:'#1a2b4a'}}>Message</label><textarea value={form.message} onChange={e=>setForm({...form,message:e.target.value})} rows={3} className="w-full px-4 py-3 rounded-2xl text-sm outline-none resize-none" style={{backgroundColor:'#f4f5f7'}} /></div></>}
+        <div className="flex flex-col sm:flex-row gap-3"><button type="submit" className="px-6 py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor:type.color}}>Envoyer la demande →</button><button type="button" onClick={onCancel} className="px-6 py-3 rounded-2xl text-sm font-semibold" style={{backgroundColor:'#f4f5f7',color:'#8a93a2'}}>Annuler</button></div>
       </form>
     </div>
   )
@@ -202,7 +264,6 @@ export default function PartnerDashboard() {
     { label:'Mon équipe', icon:'team', path:'team' },
     { label:'Mon contrat', icon:'contract', path:'contract' },
     { label:'Mes demandes', icon:'requests', path:'requests' },
-    { label:'Nouvelle demande', icon:'new-request', path:'new_request' },
     { label:'Mon profil', icon:'profile', path:'profile' },
     { label:'Aide', icon:'help', path:'help' },
   ]
@@ -471,12 +532,18 @@ export default function PartnerDashboard() {
             {/* Quick actions */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {requestTypes.slice(0,4).map(t=>(
-                <button key={t.type} onClick={()=>{setActivePage('new_request');setActiveRequestType(t)}}
-                  className="bg-white rounded-2xl p-4 text-left hover:shadow-md"
+                <button key={t.type} onClick={()=>{setActivePage('requests');setActiveRequestType(t)}}
+                  className="bg-white rounded-2xl p-4 text-left transition-all hover:shadow-md group"
                   style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
-                  <span className="text-2xl">{t.icon}</span>
-                  <p className="font-semibold mt-2 text-sm" style={{color:'#1a2b4a'}}>{t.label}</p>
-                  <p className="text-xs mt-1" style={{color:'#8a93a2'}}>{t.description}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110" style={{backgroundColor:t.color+'15'}}>
+                      <RequestTypeIcon type={t.type} size={20} color={t.color} />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm" style={{color:'#1a2b4a'}}>{t.label}</p>
+                      <p className="text-xs mt-0.5" style={{color:'#8a93a2'}}>{t.description}</p>
+                    </div>
+                  </div>
                 </button>
               ))}
             </div>
@@ -494,27 +561,85 @@ export default function PartnerDashboard() {
             {contract ? (
               <div className="bg-white rounded-2xl p-5 md:p-8" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">{[{l:'Statut',v:contract.contract_status},{l:'Début',v:new Date(contract.start_date).toLocaleDateString('fr-FR')},{l:'Fin',v:new Date(contract.end_date).toLocaleDateString('fr-FR')},{l:'Renouvellement auto',v:contract.auto_renewal?'Activé':'Désactivé'},{l:'Codes inclus',v:contract.max_codes},{l:'Tarif',v:`${contract.price}€`}].map(i=><div key={i.l}><p className="text-xs font-semibold mb-1" style={{color:'#8a93a2'}}>{i.l.toUpperCase()}</p><p className="font-semibold" style={{color:'#1a2b4a'}}>{i.v}</p></div>)}</div>
-                <div className="flex flex-col sm:flex-row gap-3 mt-6">{contract.document_url&&<a href={contract.document_url} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor:'#2BBFB3'}}>📄 Télécharger</a>}<button onClick={()=>{setActivePage('new_request');setActiveRequestType(requestTypes[4])}} className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-sm font-semibold" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}}>🔄 Renouvellement</button></div>
+                <div className="flex flex-col sm:flex-row gap-3 mt-6">{contract.document_url&&<a href={contract.document_url} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor:'#2BBFB3'}}>📄 Télécharger</a>}<button onClick={()=>{setActivePage('requests');setActiveRequestType(requestTypes[4])}} className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-sm font-semibold" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}}>🔄 Renouvellement</button></div>
               </div>
             ) : <div className="bg-white rounded-3xl p-12 text-center" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}><span className="text-4xl">📄</span><p className="font-semibold mt-4" style={{color:'#1a2b4a'}}>Aucun contrat</p></div>}
           </div>
         )}
 
-        {activePage==='new_request'&&(
-          <div>
-            <div className="mb-6"><h1 className="text-xl md:text-2xl font-bold" style={{color:'#1a2b4a'}}>Nouvelle demande</h1></div>
-            {!activeRequestType ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{requestTypes.map(t=><button key={t.type} onClick={()=>setActiveRequestType(t)} className="bg-white rounded-2xl p-5 text-left hover:shadow-md" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}><div className="flex items-center gap-3 mb-3"><div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{backgroundColor:t.color+'20'}}>{t.icon}</div><p className="font-semibold" style={{color:'#1a2b4a'}}>{t.label}</p></div><p className="text-sm" style={{color:'#8a93a2'}}>{t.description}</p></button>)}</div>
-            ) : <RequestForm type={activeRequestType} onSubmit={handleRequest} onCancel={()=>setActiveRequestType(null)} />}
-          </div>
-        )}
-
         {activePage==='requests'&&(
           <div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3"><div><h1 className="text-xl md:text-2xl font-bold" style={{color:'#1a2b4a'}}>Mes demandes</h1><p className="text-sm mt-1" style={{color:'#8a93a2'}}>{requests.length} demande(s)</p></div><button onClick={()=>{setActivePage('new_request');setActiveRequestType(null)}} className="px-5 py-3 rounded-2xl text-white text-sm font-semibold w-full sm:w-auto" style={{backgroundColor:'#2BBFB3'}}>+ Nouvelle demande</button></div>
-            {requests.length===0 ? <div className="bg-white rounded-3xl p-12 text-center" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}><span className="text-4xl">📋</span><p className="font-semibold mt-4" style={{color:'#1a2b4a'}}>Aucune demande</p></div> : (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
+              <div>
+                <h1 className="text-xl md:text-2xl font-bold" style={{color:'#1a2b4a'}}>Mes demandes</h1>
+                <p className="text-sm mt-1" style={{color:'#8a93a2'}}>{requests.length} demande{requests.length > 1 ? 's' : ''}</p>
+              </div>
+              {!activeRequestType && (
+                <button onClick={()=>setActiveRequestType('choose')} className="px-5 py-3 rounded-2xl text-white text-sm font-semibold w-full sm:w-auto" style={{backgroundColor:'#2BBFB3'}}>+ Nouvelle demande</button>
+              )}
+            </div>
+
+            {/* Sélection du type de demande */}
+            {activeRequestType === 'choose' && (
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-sm font-semibold" style={{color:'#1a2b4a'}}>Quel type de demande souhaitez-vous faire ?</p>
+                  <button onClick={()=>setActiveRequestType(null)} className="text-xs font-medium px-3 py-1.5 rounded-lg" style={{backgroundColor:'#f4f5f7',color:'#8a93a2'}}>Annuler</button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {requestTypes.map(t=>(
+                    <button key={t.type} onClick={()=>setActiveRequestType(t)} className="bg-white rounded-2xl p-5 text-left transition-all hover:shadow-md group" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)', border:'1px solid transparent'}} onMouseEnter={e=>e.currentTarget.style.borderColor=t.color+'40'} onMouseLeave={e=>e.currentTarget.style.borderColor='transparent'}>
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-11 h-11 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110" style={{backgroundColor:t.color+'15'}}>
+                          <RequestTypeIcon type={t.type} size={22} color={t.color} />
+                        </div>
+                        <p className="font-semibold text-sm" style={{color:'#1a2b4a'}}>{t.label}</p>
+                      </div>
+                      <p className="text-xs leading-relaxed" style={{color:'#8a93a2'}}>{t.description}</p>
+                      {t.isCalendar && (
+                        <div className="flex items-center gap-1.5 mt-3">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.color} strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                          <span className="text-[10px] font-medium" style={{color:t.color}}>Via agenda en ligne</span>
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Formulaire de demande */}
+            {activeRequestType && activeRequestType !== 'choose' && (
+              <div className="mb-6">
+                <RequestForm type={activeRequestType} onSubmit={handleRequest} onCancel={()=>setActiveRequestType(null)} />
+              </div>
+            )}
+
+            {/* Liste des demandes existantes */}
+            {requests.length===0 && !activeRequestType ? (
+              <div className="bg-white rounded-3xl p-12 text-center" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
+                <span className="text-4xl">📋</span>
+                <p className="font-semibold mt-4" style={{color:'#1a2b4a'}}>Aucune demande</p>
+                <p className="text-sm mt-1 mb-4" style={{color:'#8a93a2'}}>Faites votre première demande pour commencer</p>
+                <button onClick={()=>setActiveRequestType('choose')} className="px-5 py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor:'#2BBFB3'}}>+ Nouvelle demande</button>
+              </div>
+            ) : requests.length > 0 && (
               <div className="flex flex-col gap-3">{requests.map(req=>{const t=requestTypes.find(x=>x.type===req.request_type)||requestTypes[0];const s=statusLabels[req.request_status]||statusLabels.pending;return(
-                <div key={req.id} className="bg-white rounded-2xl px-4 md:px-6 py-4 md:py-5" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}><div className="flex items-center justify-between gap-3"><div className="flex items-center gap-3 min-w-0"><div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0" style={{backgroundColor:t.color+'20'}}>{t.icon}</div><div className="min-w-0"><p className="font-semibold truncate" style={{color:'#1a2b4a'}}>{t.label}</p><p className="text-sm mt-0.5 truncate" style={{color:'#8a93a2'}}>{req.reason||'—'}</p><p className="text-xs mt-0.5" style={{color:'#8a93a2'}}>{req.created_at?new Date(req.created_at).toLocaleDateString('fr-FR'):''}</p></div></div><span className="text-xs px-2 md:px-3 py-1 rounded-xl font-medium whitespace-nowrap flex-shrink-0" style={{backgroundColor:s.bg,color:s.text}}>{s.label}</span></div></div>
+                <div key={req.id} className="bg-white rounded-2xl px-4 md:px-6 py-4 md:py-5" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{backgroundColor:t.color+'15'}}>
+                        <RequestTypeIcon type={t.type} size={20} color={t.color} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold truncate" style={{color:'#1a2b4a'}}>{t.label}</p>
+                        <p className="text-sm mt-0.5 truncate" style={{color:'#8a93a2'}}>{req.reason || req.message || '—'}</p>
+                        <p className="text-xs mt-0.5" style={{color:'#8a93a2'}}>{req.created_at ? new Date(req.created_at).toLocaleDateString('fr-FR') : ''}</p>
+                      </div>
+                    </div>
+                    <span className="text-xs px-2 md:px-3 py-1 rounded-xl font-medium whitespace-nowrap flex-shrink-0" style={{backgroundColor:s.bg,color:s.text}}>{s.label}</span>
+                  </div>
+                </div>
               )})}</div>
             )}
           </div>
