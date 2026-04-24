@@ -396,7 +396,7 @@ export default function PartnerDashboard() {
                   <p className="text-sm font-semibold truncate" style={{color:'#1a2b4a'}}>{partnerName}</p>
                   <p className="text-xs truncate" style={{color:'#8a93a2'}}>{partnerInfo?.partner_type || 'entreprise'}</p>
                 </div>
-                {!isMobile && <PartnerNotifications data={notifData} onNavigate={handleNavClick} />}
+                {!isMobile && <PartnerNotifications data={notifData} onNavigate={handleNavClick} align="left" />}
               </div>
             </div>
           </div>

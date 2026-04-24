@@ -95,7 +95,7 @@ function computePartnerNotifications({ requests, codes, contract, beneficiaries 
   return notifications
 }
 
-export default function PartnerNotifications({ data, onNavigate }) {
+export default function PartnerNotifications({ data, onNavigate, align = 'right' }) {
   const [isOpen, setIsOpen] = useState(false)
   const [dismissedIds, setDismissedIds] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem('heka_partner_notifs') || '[]') }
@@ -152,7 +152,7 @@ export default function PartnerNotifications({ data, onNavigate }) {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-12 w-96 max-w-[calc(100vw-2rem)] bg-white rounded-2xl overflow-hidden z-50 animate-slide-down"
+        <div className={`absolute ${align === 'left' ? 'left-0' : 'right-0'} top-12 w-96 max-w-[calc(100vw-2rem)] bg-white rounded-2xl overflow-hidden z-50 animate-slide-down`}
           style={{ boxShadow: '0 20px 60px rgba(26,43,74,0.15)', border: '1px solid #f4f5f7', minWidth: '340px' }}>
           <div className="px-4 py-3 flex items-center justify-between"
             style={{ borderBottom: '1px solid #f4f5f7' }}>
