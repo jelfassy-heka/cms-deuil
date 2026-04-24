@@ -27,7 +27,7 @@ export function AuthProvider({ children }) {
   const signIn = async (email, password, selectedRole) => {
     try {
       // 1. Authentification via Xano
-      const response = await fetch(`${XANO_AUTH_URL}/auth/login_cms`, {
+      const response = await fetch(`${XANO_AUTH_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -38,7 +38,7 @@ export function AuthProvider({ children }) {
       const authToken = data.authToken
 
       // 2. Récupérer les infos utilisateur
-      const meResponse = await fetch(`${XANO_AUTH_URL}/auth/me_cms`, {
+      const meResponse = await fetch(`${XANO_AUTH_URL}/auth/me`, {
         headers: { 'Authorization': `Bearer ${authToken}` },
       })
       const meData = await meResponse.json()
