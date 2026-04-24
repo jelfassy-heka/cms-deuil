@@ -11,7 +11,9 @@ const getHeaders = (extra = {}) => {
   }
   return headers
 }
-
+const PROXY = 'https://corsproxy.io/?url='
+const REAL_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8'
+const BASE = PROXY + encodeURIComponent(REAL_BASE)
 const xano = {
   async getAll(table, params = {}) {
     const query = Object.entries(params).filter(([,v])=>v!==undefined&&v!==null).map(([k,v])=>`${k}=${encodeURIComponent(v)}`).join('&')

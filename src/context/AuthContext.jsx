@@ -1,8 +1,9 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import xano from '../lib/xano'
 
-const AuthContext = createContext(null)
-const XANO_AUTH_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8'
+const PROXY = 'https://corsproxy.io/?url='
+const REAL_AUTH = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8'
+const XANO_AUTH_URL = PROXY + encodeURIComponent(REAL_AUTH)
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
