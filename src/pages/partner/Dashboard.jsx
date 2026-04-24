@@ -48,10 +48,45 @@ const requestTypes = [
 
 function RequestForm({ type, onSubmit, onCancel }) {
   const [form, setForm] = useState({ quantity:1, reason:'', preferred_date:'', preferred_date_2:'', message:'' })
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false)
   const handleSubmit = e => { e.preventDefault(); onSubmit({ ...form, request_type: type.type }) }
 
   // Pour les types RDV et Démo → redirection Google Calendar
   if (type.isCalendar) {
+    // ÉTAPE 2 — UI de confirmation après redirection Google Calendar
+    if (awaitingConfirmation) {
+      return (
+        <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-8 mb-6" style={{ boxShadow:'0 4px 24px rgba(43,191,179,0.08)' }}>
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ backgroundColor: type.color + '15' }}>
+              <RequestTypeIcon type={type.type} size={22} color={type.color} />
+            </div>
+            <div><h2 className="font-bold text-base md:text-lg" style={{color:'#1a2b4a'}}>{type.label}</h2><p className="text-sm" style={{color:'#8a93a2'}}>{type.description}</p></div>
+          </div>
+
+          <div className="rounded-2xl p-6 mb-6 text-center" style={{ backgroundColor: '#f8fafb' }}>
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: '#e8f8f7' }}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2BBFB3" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M9 16l2 2 4-4"/></svg>
+            </div>
+            <p className="font-semibold text-base mb-2" style={{ color: '#1a2b4a' }}>Avez-vous confirmé votre rendez-vous sur Google Calendar ?</p>
+            <p className="text-sm" style={{ color: '#8a93a2', lineHeight: '1.6' }}>
+              Une fois votre créneau réservé, cliquez sur « J'ai pris mon rendez-vous » pour enregistrer votre demande et recevoir votre email de confirmation.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button type="button"
+              onClick={() => { onSubmit({ ...form, request_type: type.type, message: form.message || `${type.label} via agenda` }); setAwaitingConfirmation(false) }}
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor: type.color}}>
+              ✓ J'ai pris mon rendez-vous
+            </button>
+            <button type="button" onClick={() => setAwaitingConfirmation(false)} className="px-6 py-3 rounded-2xl text-sm font-semibold" style={{backgroundColor:'#f4f5f7',color:'#8a93a2'}}>← Annuler</button>
+          </div>
+        </div>
+      )
+    }
+
+    // ÉTAPE 1 — Formulaire initial avec lien Google Calendar
     return (
       <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-8 mb-6" style={{ boxShadow:'0 4px 24px rgba(43,191,179,0.08)' }}>
         <div className="flex items-center gap-3 mb-6">
@@ -82,7 +117,7 @@ function RequestForm({ type, onSubmit, onCancel }) {
 
         <div className="flex flex-col sm:flex-row gap-3">
           <a href={GOOGLE_CALENDAR_BOOKING_URL} target="_blank" rel="noreferrer"
-            onClick={() => { onSubmit({ ...form, request_type: type.type, message: form.message || `${type.label} via agenda` }) }}
+            onClick={() => setAwaitingConfirmation(true)}
             className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor: type.color}}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
             Choisir un créneau →
@@ -162,6 +197,13 @@ export default function PartnerDashboard() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [isMobile, setIsMobile] = useState(false)
+  const [toast, setToast] = useState(null)
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 4500)
+    return () => clearTimeout(t)
+  }, [toast])
 
   useEffect(() => { const c=()=>{const m=window.innerWidth<768;setIsMobile(m);if(m)setSidebarOpen(false)}; c(); window.addEventListener('resize',c); return()=>window.removeEventListener('resize',c) }, [])
 
@@ -217,6 +259,10 @@ export default function PartnerDashboard() {
       })
 
       setRequests([created, ...requests]); setActiveRequestType(null); setActivePage('requests')
+
+      if (reqType?.isCalendar) {
+        setToast('Rendez-vous confirmé ! Un email de confirmation vous a été envoyé.')
+      }
     } catch (err) { console.error('Erreur:', err) }
   }
 
@@ -272,6 +318,18 @@ export default function PartnerDashboard() {
 
   return (
     <div className="flex min-h-screen" style={{ backgroundColor:'#f4f5f7' }}>
+      {toast && (
+        <div className="fixed top-4 right-4 z-[100] bg-white rounded-2xl px-5 py-4 flex items-center gap-3 max-w-sm animate-[fadeIn_.2s_ease-out]"
+          style={{ boxShadow:'0 8px 32px rgba(43,191,179,0.2)', border:'1px solid #e8f8f7' }}>
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor:'#e8f8f7' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2BBFB3" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L20 7"/></svg>
+          </div>
+          <p className="text-sm font-medium" style={{ color:'#1a2b4a' }}>{toast}</p>
+          <button onClick={() => setToast(null)} className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor:'#f4f5f7' }}>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#8a93a2" strokeWidth="1.5" strokeLinecap="round"><path d="M3 3l6 6M9 3l-6 6"/></svg>
+          </button>
+        </div>
+      )}
       {isMobile && mobileMenuOpen && <div className="fixed inset-0 z-40" style={{backgroundColor:'rgba(26,43,74,0.5)'}} onClick={()=>setMobileMenuOpen(false)} />}
       {isMobile && (
         <div className="fixed top-0 left-0 right-0 z-30 bg-white flex items-center justify-between px-4 py-3" style={{boxShadow:'0 2px 12px rgba(43,191,179,0.08)'}}>
