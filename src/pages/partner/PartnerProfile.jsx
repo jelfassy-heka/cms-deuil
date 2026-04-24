@@ -6,6 +6,22 @@ import { Toast, useToast } from '../../components/SharedUI'
 const XANO_AUTH_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:IS_IPWIL'
 const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
 
+function PasswordInput({ value, onChange, placeholder = '••••••••' }) {
+  const [show, setShow] = useState(false)
+  return (
+    <div className="relative">
+      <input type={show ? 'text' : 'password'} value={value} onChange={onChange} placeholder={placeholder} className="w-full px-4 py-3 pr-12 rounded-2xl text-sm outline-none" style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }} />
+      <button type="button" onClick={() => setShow(!show)} className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg flex items-center justify-center" style={{ color: '#8a93a2' }} tabIndex={-1}>
+        {show ? (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+        ) : (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        )}
+      </button>
+    </div>
+  )
+}
+
 const sendEmail = async (to_email, to_name, template_id, params) => {
   try {
     await fetch(`${XANO_BASE}/send-email`, {
@@ -144,9 +160,9 @@ export default function PartnerProfile({ partnerId }) {
           <div className="bg-white rounded-2xl p-5 md:p-6" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
             <h2 className="font-bold text-base mb-4" style={{color:'#1a2b4a'}}>Changer le mot de passe</h2>
             <form onSubmit={handleChangePassword}>
-              <div className="mb-4"><label className="block text-sm font-semibold mb-1.5" style={{color:'#1a2b4a'}}>Mot de passe actuel</label><input type="password" value={pwForm.current} onChange={e=>setPwForm({...pwForm,current:e.target.value})} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}} /></div>
-              <div className="mb-4"><label className="block text-sm font-semibold mb-1.5" style={{color:'#1a2b4a'}}>Nouveau mot de passe</label><input type="password" value={pwForm.newPw} onChange={e=>setPwForm({...pwForm,newPw:e.target.value})} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}} /><p className="text-xs mt-1" style={{color:'#8a93a2'}}>8 caractères minimum</p></div>
-              <div className="mb-6"><label className="block text-sm font-semibold mb-1.5" style={{color:'#1a2b4a'}}>Confirmer</label><input type="password" value={pwForm.confirm} onChange={e=>setPwForm({...pwForm,confirm:e.target.value})} className="w-full px-4 py-3 rounded-2xl text-sm outline-none" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}} />{pwForm.confirm&&pwForm.newPw!==pwForm.confirm&&<p className="text-xs mt-1" style={{color:'#ef4444'}}>Les mots de passe ne correspondent pas</p>}</div>
+              <div className="mb-4"><label className="block text-sm font-semibold mb-1.5" style={{color:'#1a2b4a'}}>Mot de passe actuel</label><PasswordInput value={pwForm.current} onChange={e=>setPwForm({...pwForm,current:e.target.value})} /></div>
+              <div className="mb-4"><label className="block text-sm font-semibold mb-1.5" style={{color:'#1a2b4a'}}>Nouveau mot de passe</label><PasswordInput value={pwForm.newPw} onChange={e=>setPwForm({...pwForm,newPw:e.target.value})} /><p className="text-xs mt-1" style={{color:'#8a93a2'}}>8 caractères minimum</p></div>
+              <div className="mb-6"><label className="block text-sm font-semibold mb-1.5" style={{color:'#1a2b4a'}}>Confirmer</label><PasswordInput value={pwForm.confirm} onChange={e=>setPwForm({...pwForm,confirm:e.target.value})} />{pwForm.confirm&&pwForm.newPw!==pwForm.confirm&&<p className="text-xs mt-1" style={{color:'#ef4444'}}>Les mots de passe ne correspondent pas</p>}</div>
               <button type="submit" disabled={pwSaving} className="w-full py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor:pwSaving?'#8a93a2':'#1a2b4a'}}>{pwSaving?'Modification...':'Modifier le mot de passe'}</button>
             </form>
           </div>
