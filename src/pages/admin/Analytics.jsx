@@ -6,6 +6,8 @@ import {
 import xano from '../../lib/xano'
 import { SkeletonList } from '../../components/SharedUI'
 
+const APP_USERS_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8/app-users'
+
 const PERIOD_OPTIONS = [
   { key: '7d', label: '7 jours', days: 7 },
   { key: '30d', label: '30 jours', days: 30 },
@@ -105,7 +107,7 @@ export default function Analytics() {
       setLoading(true)
       try {
         const [users, codes, partners, beneficiaries, contracts] = await Promise.all([
-          xano.getAll('users'),
+          fetch(APP_USERS_URL).then(r => r.json()),
           xano.getAll('plan-activation-code'),
           xano.getAll('partners'),
           xano.getAll('beneficiaries'),

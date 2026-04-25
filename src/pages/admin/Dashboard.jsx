@@ -14,6 +14,8 @@ import Analytics from './Analytics'
 import NotificationCenter from './NotificationCenter'
 import GlobalSearch from './GlobalSearch'
 
+const APP_USERS_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8/app-users'
+
 const navItems = [
   { label: 'Tableau de bord', icon: 'dashboard', path: 'dashboard' },
   { label: 'Partenaires', icon: 'partners', path: 'partners' },
@@ -169,7 +171,7 @@ export default function AdminDashboard() {
           xano.getAll('partners'),
           xano.getAll('plan-activation-code'),
           xano.getAll('code_request'),
-          xano.getAll('users'),
+          fetch(APP_USERS_URL).then(r => r.json()),
           xano.getAll('contracts').catch(() => []),
           xano.getAll('beneficiaries').catch(() => []),
           xano.getAll('partner_members').catch(() => []),
@@ -190,7 +192,7 @@ export default function AdminDashboard() {
       try {
         const [requests, users, codes] = await Promise.all([
           xano.getAll('code_request'),
-          xano.getAll('users'),
+          fetch(APP_USERS_URL).then(r => r.json()),
           xano.getAll('plan-activation-code'),
         ])
         setDatasets(prev => ({ ...prev, requests, users, codes }))

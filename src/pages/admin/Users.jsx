@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react'
 import xano from '../../lib/xano'
 import { Toast, useToast, SearchInput, SkeletonStats, SkeletonList, Pagination, usePagination, EmptyState, exportToCSV, useDebounce } from '../../components/SharedUI'
 
+const APP_USERS_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8/app-users'
+
 const typeConfig = {
   partner: { label: 'Code partenaire', bg: '#e8f8f7', color: '#2BBFB3', avatarBg: '#2BBFB3' },
   paying: { label: 'Payant', bg: '#e8f0fe', color: '#1a2b4a', avatarBg: '#1a2b4a' },
@@ -51,7 +53,7 @@ export default function Users() {
     const fetchAll = async () => {
       try {
         const [u, c, s, po, r, pa, b, a] = await Promise.all([
-          xano.getAll('users'),
+          fetch(APP_USERS_URL).then(r => r.json()),
           xano.getAll('plan-activation-code'),
           xano.getAll('spaces'),
           xano.getAll('posts'),
