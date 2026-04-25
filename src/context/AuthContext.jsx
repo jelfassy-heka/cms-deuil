@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import xano from '../lib/xano'
+
+const AuthContext = createContext(null)
 const XANO_AUTH_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:IS_IPWIL'
 
 export function AuthProvider({ children }) {
