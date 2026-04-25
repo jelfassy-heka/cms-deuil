@@ -18,6 +18,20 @@ const dateFilters = [
   { key: '365', label: 'Cette année' },
 ]
 
+const getAuthMethod = (user) => {
+  const methods = []
+  if (user.google_oauth?.id && user.google_oauth.id !== '') methods.push('google')
+  if (user.facebook_oauth?.id && user.facebook_oauth.id !== 0 && user.facebook_oauth.id !== '') methods.push('facebook')
+  if (methods.length === 0) methods.push('email')
+  return methods
+}
+
+const authMethodConfig = {
+  email: { label: 'Email', icon: '@', bg: '#f4f5f7', color: '#8a93a2', textBg: '#f4f5f7' },
+  google: { label: 'Google', icon: 'G', bg: '#e8f0fe', color: '#1a73e8', textBg: '#e8f0fe' },
+  facebook: { label: 'Facebook', icon: 'f', bg: '#e7f3ff', color: '#1877f2', textBg: '#e7f3ff' },
+}
+
 export default function Users() {
   const [users, setUsers] = useState([])
   const [codes, setCodes] = useState([])
@@ -33,6 +47,7 @@ export default function Users() {
   const [typeFilter, setTypeFilter] = useState('all')
   const [companyFilter, setCompanyFilter] = useState('all')
   const [dateFilter, setDateFilter] = useState('all')
+  const [authMethodFilter, setAuthMethodFilter] = useState('all')
   const [sortField, setSortField] = useState('created_at')
   const [sortDir, setSortDir] = useState('desc')
 
@@ -53,14 +68,14 @@ export default function Users() {
     const fetchAll = async () => {
       try {
         const [u, c, s, po, r, pa, b, a] = await Promise.all([
-          fetch(APP_USERS_URL).then(r => r.json()),
-          xano.getAll('plan-activation-code'),
-          xano.getAll('spaces'),
-          xano.getAll('posts'),
-          xano.getAll('post-reactions'),
-          xano.getAll('partners'),
-          xano.getAll('beneficiaries'),
-          xano.getAll('alerts'),
+          fetch(APP_USERS_URL).then(r => r.json()).catch(() => []),
+          xano.getAll('plan-activation-code').catch(() => []),
+          xano.getAll('spaces').catch(() => []),
+          xano.getAll('posts').catch(() => []),
+          xano.getAll('post-reactions').catch(() => []),
+          xano.getAll('partners').catch(() => []),
+          xano.getAll('beneficiaries').catch(() => []),
+          xano.getAll('alerts').catch(() => []),
         ])
         setUsers(Array.isArray(u) ? u : u?.items || [])
         setCodes(Array.isArray(c) ? c : c?.items || [])
@@ -106,9 +121,24 @@ export default function Users() {
         codeUsed: usedCode?.code || null,
         spacesCount: userSpaces.length,
         postsCount: userPosts.length,
+        authMethods: getAuthMethod(u),
       }
     })
   }, [users, codes, spaces, posts, partners, beneficiaries])
+
+  // ─── Détection des doublons potentiels ───
+  const duplicates = useMemo(() => {
+    const byEmail = {}
+    enrichedUsers.forEach(u => {
+      if (!u.email) return
+      const email = u.email.toLowerCase()
+      if (!byEmail[email]) byEmail[email] = []
+      byEmail[email].push(u)
+    })
+    return Object.entries(byEmail)
+      .filter(([_, users]) => users.length > 1)
+      .map(([email, users]) => ({ email, users }))
+  }, [enrichedUsers])
 
   // ─── Liste des entreprises pour le filtre ───
   const companyList = useMemo(() => {
@@ -119,15 +149,18 @@ export default function Users() {
   // ─── Stats ───
   const stats = useMemo(() => {
     const total = enrichedUsers.length
-    const partnerCount = enrichedUsers.filter(u => u.userType === 'partner').length
-    const payingCount = enrichedUsers.filter(u => u.userType === 'paying').length
-    const freeCount = enrichedUsers.filter(u => u.userType === 'free').length
+    const emailCount = enrichedUsers.filter(u => u.authMethods.includes('email') && !u.authMethods.includes('google') && !u.authMethods.includes('facebook')).length
+    const googleCount = enrichedUsers.filter(u => u.authMethods.includes('google')).length
+    const facebookCount = enrichedUsers.filter(u => u.authMethods.includes('facebook')).length
     const thisMonth = enrichedUsers.filter(u => {
       const d = new Date(u.created_at)
       const now = new Date()
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
     }).length
-    return { total, partnerCount, payingCount, freeCount, thisMonth }
+    const partnerCount = enrichedUsers.filter(u => u.userType === 'partner').length
+    const payingCount = enrichedUsers.filter(u => u.userType === 'paying').length
+    const freeCount = enrichedUsers.filter(u => u.userType === 'free').length
+    return { total, emailCount, googleCount, facebookCount, thisMonth, partnerCount, payingCount, freeCount }
   }, [enrichedUsers])
 
   // ─── Filtrage ───
@@ -143,6 +176,10 @@ export default function Users() {
 
     if (typeFilter !== 'all') {
       result = result.filter(u => u.userType === typeFilter)
+    }
+
+    if (authMethodFilter !== 'all') {
+      result = result.filter(u => u.authMethods.includes(authMethodFilter))
     }
 
     if (companyFilter !== 'all') {
@@ -168,7 +205,7 @@ export default function Users() {
     })
 
     return result
-  }, [enrichedUsers, debouncedSearch, typeFilter, companyFilter, dateFilter, sortField, sortDir])
+  }, [enrichedUsers, debouncedSearch, typeFilter, authMethodFilter, companyFilter, dateFilter, sortField, sortDir])
 
   const { paginated, page, totalPages, setPage, total } = usePagination(filtered, 25)
 
@@ -256,13 +293,36 @@ export default function Users() {
         </button>
       </div>
 
+      {/* Bandeau doublons */}
+      {duplicates.length > 0 && (
+        <div className="mb-4 p-3 rounded-2xl flex items-center justify-between gap-3" style={{ backgroundColor: '#fff7ed', border: '1px solid #fed7aa' }}>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: '#9a3412' }}>
+              ⚠️ {duplicates.length} doublon{duplicates.length > 1 ? 's' : ''} potentiel{duplicates.length > 1 ? 's' : ''} détecté{duplicates.length > 1 ? 's' : ''}
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: '#c2410c' }}>
+              Mêmes emails avec des méthodes de connexion différentes
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              const list = duplicates.map(d => `${d.email}: ${d.users.map(u => u.authMethods.join('+')).join(' / ')}`).join('\n')
+              alert(`Doublons potentiels:\n\n${list}`)
+            }}
+            className="px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap"
+            style={{ backgroundColor: '#9a3412', color: 'white' }}>
+            Voir →
+          </button>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         {[
           { label: 'Total', value: stats.total, color: '#2BBFB3', delta: `+${stats.thisMonth} ce mois` },
-          { label: 'Payants', value: stats.payingCount, color: '#1a2b4a', delta: stats.total ? `${Math.round(stats.payingCount / stats.total * 100)}%` : '0%' },
-          { label: 'Code partenaire', value: stats.partnerCount, color: '#d97706', delta: stats.total ? `${Math.round(stats.partnerCount / stats.total * 100)}%` : '0%' },
-          { label: 'Gratuits / Essai', value: stats.freeCount, color: '#8a93a2', delta: stats.total ? `${Math.round(stats.freeCount / stats.total * 100)}%` : '0%' },
+          { label: 'Email', value: stats.emailCount, color: '#8a93a2', delta: stats.total ? `${Math.round(stats.emailCount / stats.total * 100)}%` : '0%' },
+          { label: 'Google', value: stats.googleCount, color: '#1a73e8', delta: stats.total ? `${Math.round(stats.googleCount / stats.total * 100)}%` : '0%' },
+          { label: 'Facebook', value: stats.facebookCount, color: '#1877f2', delta: stats.total ? `${Math.round(stats.facebookCount / stats.total * 100)}%` : '0%' },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-2xl p-4 md:p-5" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
             <p className="text-xl md:text-2xl font-bold mb-1" style={{ color: s.color }}>{s.value}</p>
@@ -287,6 +347,17 @@ export default function Users() {
           <option value="paying">Payant</option>
           <option value="partner">Code partenaire</option>
           <option value="free">Gratuit / Essai</option>
+        </select>
+
+        <select
+          value={authMethodFilter}
+          onChange={e => { setAuthMethodFilter(e.target.value); setPage(1) }}
+          className="px-3 py-3 rounded-2xl text-sm outline-none"
+          style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a', border: '1px solid #eef0f2' }}>
+          <option value="all">Toutes méthodes</option>
+          <option value="email">Email</option>
+          <option value="google">Google</option>
+          <option value="facebook">Facebook</option>
         </select>
 
         {showCompanyFilter && companyList.length > 0 && (
@@ -352,8 +423,20 @@ export default function Users() {
                     <div className="hidden md:grid items-center" style={{ gridTemplateColumns: '1fr 140px 150px 120px 80px' }}>
                       <div className="px-4 py-3 flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ backgroundColor: tc.avatarBg }}>{initials}</div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold truncate" style={{ color: '#1a2b4a' }}>{u.firstName} {u.lastName}</p>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <p className="text-sm font-semibold truncate" style={{ color: '#1a2b4a' }}>{u.firstName} {u.lastName}</p>
+                            {u.authMethods.map(m => {
+                              const c = authMethodConfig[m]
+                              return (
+                                <span key={m} title={`Connexion ${c.label}`}
+                                  className="inline-flex items-center justify-center text-xs font-bold flex-shrink-0"
+                                  style={{ width: '18px', height: '18px', borderRadius: '4px', backgroundColor: c.textBg, color: c.color }}>
+                                  {c.icon}
+                                </span>
+                              )
+                            })}
+                          </div>
                           <p className="text-xs truncate" style={{ color: '#8a93a2' }}>{u.email}</p>
                         </div>
                       </div>
@@ -376,7 +459,19 @@ export default function Users() {
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0" style={{ backgroundColor: tc.avatarBg }}>{initials}</div>
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold truncate" style={{ color: '#1a2b4a' }}>{u.firstName} {u.lastName}</p>
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <p className="text-sm font-semibold truncate" style={{ color: '#1a2b4a' }}>{u.firstName} {u.lastName}</p>
+                            {u.authMethods.map(m => {
+                              const c = authMethodConfig[m]
+                              return (
+                                <span key={m} title={`Connexion ${c.label}`}
+                                  className="inline-flex items-center justify-center text-xs font-bold flex-shrink-0"
+                                  style={{ width: '18px', height: '18px', borderRadius: '4px', backgroundColor: c.textBg, color: c.color }}>
+                                  {c.icon}
+                                </span>
+                              )
+                            })}
+                          </div>
                           <p className="text-xs truncate" style={{ color: '#8a93a2' }}>{u.email}</p>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-[10px] px-2 py-0.5 rounded-md font-medium" style={{ backgroundColor: tc.bg, color: tc.color }}>{tc.label}</span>
@@ -402,74 +497,126 @@ export default function Users() {
           <div className={`${isMobile ? 'w-full' : 'w-80'} flex-shrink-0`}>
             {isMobile && <button onClick={() => setShowDetail(false)} className="mb-4 text-sm font-medium flex items-center gap-2" style={{ color: '#2BBFB3' }}>← Retour à la liste</button>}
             <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6 sticky top-4" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-
-              {/* Header */}
-              <div className="text-center mb-5">
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-white text-xl font-bold mx-auto mb-3" style={{ backgroundColor: typeConfig[selectedUser.userType]?.avatarBg || '#2BBFB3' }}>
-                  {`${selectedUser.firstName?.[0] || ''}${selectedUser.lastName?.[0] || ''}`.toUpperCase()}
-                </div>
-                <h2 className="font-bold text-lg" style={{ color: '#1a2b4a' }}>{selectedUser.firstName} {selectedUser.lastName}</h2>
-                <p className="text-sm" style={{ color: '#8a93a2' }}>{selectedUser.email}</p>
-                <span className="text-xs px-3 py-1 rounded-lg font-medium inline-block mt-2" style={{ backgroundColor: typeConfig[selectedUser.userType]?.bg, color: typeConfig[selectedUser.userType]?.color }}>
-                  {typeConfig[selectedUser.userType]?.label}
-                </span>
-              </div>
-
-              {/* Informations */}
-              <p className="text-[10px] font-semibold uppercase tracking-wider mb-2 mt-4" style={{ color: '#8a93a2' }}>Informations</p>
-              {[
-                { label: 'Inscription', value: selectedUser.created_at ? new Date(selectedUser.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—' },
-                { label: 'Genre', value: selectedUser.gender || 'Non précisé' },
-                ...(selectedUser.companyName ? [{ label: 'Entreprise (via code)', value: selectedUser.companyName }] : []),
-                ...(selectedUser.codeUsed ? [{ label: 'Code utilisé', value: selectedUser.codeUsed, mono: true }] : []),
-                { label: 'ID utilisateur', value: `#${selectedUser.id}` },
-              ].map(i => (
-                <div key={i.label} className="rounded-xl p-3 mb-2" style={{ backgroundColor: '#f8fafb' }}>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: '#8a93a2' }}>{i.label}</p>
-                  <p className="text-sm font-medium mt-0.5" style={{ color: '#1a2b4a', fontFamily: i.mono ? 'monospace' : 'inherit', letterSpacing: i.mono ? '1px' : 'normal' }}>{i.value}</p>
-                </div>
-              ))}
-
-              {/* Murs du souvenir */}
-              {selectedDetails?.userSpaces.length > 0 && (
-                <>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider mb-2 mt-4" style={{ color: '#8a93a2' }}>Murs du souvenir</p>
-                  {selectedDetails.userSpaces.map(s => (
-                    <div key={s.id} className="rounded-xl p-3 mb-2" style={{ backgroundColor: '#f8fafb' }}>
-                      <p className="text-sm font-semibold" style={{ color: '#1a2b4a' }}>En mémoire de {s.deceasedFirstName} {s.deceasedLastName}</p>
-                      <p className="text-xs mt-1" style={{ color: '#8a93a2' }}>
-                        Créé le {new Date(s.created_at).toLocaleDateString('fr-FR')} · {posts.filter(p => p.spaceId === s.id).length} publication{posts.filter(p => p.spaceId === s.id).length > 1 ? 's' : ''}
+              {selectedUser && selectedDetails && (
+                <div>
+                  {/* Header user */}
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold text-lg flex-shrink-0" style={{ backgroundColor: '#2BBFB3' }}>
+                      {`${selectedUser.firstName?.[0] || ''}${selectedUser.lastName?.[0] || selectedUser.email?.[0] || ''}`.toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-bold truncate" style={{ color: '#1a2b4a' }}>{selectedUser.firstName} {selectedUser.lastName}</h3>
+                        {selectedUser.authMethods?.map(m => {
+                          const c = authMethodConfig[m]
+                          return (
+                            <span key={m} className="inline-flex items-center justify-center text-xs font-bold flex-shrink-0"
+                              style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: c.textBg, color: c.color }}>
+                              {c.icon}
+                            </span>
+                          )
+                        })}
+                      </div>
+                      <p className="text-xs" style={{ color: '#8a93a2' }}>
+                        {selectedUser.gender === 'male' ? '♂' : selectedUser.gender === 'female' ? '♀' : '·'} · ID #{selectedUser.id}
                       </p>
                     </div>
-                  ))}
-                </>
+                  </div>
+
+                  {/* Section Méthode de connexion */}
+                  <div className="mb-4">
+                    <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Méthode de connexion</p>
+                    <div className="rounded-xl p-3" style={{ backgroundColor: '#f4f5f7' }}>
+                      {selectedUser.authMethods?.map(m => {
+                        const c = authMethodConfig[m]
+                        const oauthData = m === 'google' ? selectedUser.google_oauth : m === 'facebook' ? selectedUser.facebook_oauth : null
+                        return (
+                          <div key={m} className="flex items-center gap-2 mb-1 last:mb-0">
+                            <span className="inline-flex items-center justify-center text-xs font-bold flex-shrink-0"
+                              style={{ width: '22px', height: '22px', borderRadius: '4px', backgroundColor: c.textBg, color: c.color }}>
+                              {c.icon}
+                            </span>
+                            <span className="text-sm font-semibold" style={{ color: '#1a2b4a' }}>{c.label}</span>
+                            {oauthData?.email && <span className="text-xs" style={{ color: '#8a93a2' }}>· {oauthData.email}</span>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Section Abonnement */}
+                  <div className="mb-4">
+                    <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Abonnement</p>
+                    <div className="rounded-xl p-3" style={{ backgroundColor: '#f4f5f7' }}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-semibold" style={{ color: '#1a2b4a' }}>{typeConfig[selectedUser.userType]?.label || 'Inconnu'}</span>
+                        {selectedDetails.usedCode && (
+                          <span className="text-xs px-2 py-0.5 rounded-lg" style={{ backgroundColor: '#e8f8f7', color: '#2BBFB3' }}>Actif</span>
+                        )}
+                      </div>
+                      {selectedUser.companyName && (
+                        <p className="text-xs" style={{ color: '#8a93a2' }}>Partenaire : {selectedUser.companyName}</p>
+                      )}
+                      {selectedDetails.usedCode && (
+                        <p className="text-xs mt-1 font-mono" style={{ color: '#8a93a2' }}>
+                          Code : <span style={{ color: '#1a2b4a' }}>{selectedDetails.usedCode.code}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Section Activité */}
+                  <div className="mb-4">
+                    <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Activité</p>
+                    <table className="w-full text-sm">
+                      <tbody>
+                        <tr>
+                          <td className="py-1" style={{ color: '#8a93a2' }}>Inscription</td>
+                          <td className="py-1 text-right" style={{ color: '#1a2b4a' }}>
+                            {new Date(selectedUser.created_at).toLocaleDateString('fr-FR')}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="py-1" style={{ color: '#8a93a2' }}>Genre</td>
+                          <td className="py-1 text-right" style={{ color: '#1a2b4a' }}>
+                            {selectedUser.gender === 'male' ? 'Homme' : selectedUser.gender === 'female' ? 'Femme' : '—'}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="py-1" style={{ color: '#8a93a2' }}>Tokens push actifs</td>
+                          <td className="py-1 text-right" style={{ color: '#1a2b4a' }}>
+                            {selectedUser.fcmTokens?.length || 0}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Section Technique pliable */}
+                  <details className="mb-4">
+                    <summary className="text-xs uppercase tracking-wider font-semibold cursor-pointer mb-2" style={{ color: '#8a93a2' }}>
+                      Détails techniques
+                    </summary>
+                    <div className="rounded-xl p-3 font-mono text-xs leading-relaxed" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>
+                      user_id : {selectedUser.id}<br/>
+                      firebase_id : {selectedUser.firebaseId || '—'}<br/>
+                      created_at : {selectedUser.created_at}<br/>
+                      fcm_tokens : {selectedUser.fcmTokens?.length || 0} actif(s)
+                    </div>
+                  </details>
+
+                  {/* Boutons d'action */}
+                  <div className="flex gap-2 pt-3 border-t" style={{ borderColor: '#f4f5f7' }}>
+                    <button
+                      onClick={handleExportRGPD}
+                      disabled={exporting}
+                      className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold"
+                      style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }}>
+                      {exporting ? 'Export...' : 'Export RGPD'}
+                    </button>
+                  </div>
+                </div>
               )}
-
-              {/* Activité */}
-              <p className="text-[10px] font-semibold uppercase tracking-wider mb-2 mt-4" style={{ color: '#8a93a2' }}>Activité</p>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-xl p-3" style={{ backgroundColor: '#f8fafb' }}>
-                  <p className="text-lg font-bold" style={{ color: '#2BBFB3' }}>{selectedDetails?.userPosts.length || 0}</p>
-                  <p className="text-[10px]" style={{ color: '#8a93a2' }}>Publications</p>
-                </div>
-                <div className="rounded-xl p-3" style={{ backgroundColor: '#f8fafb' }}>
-                  <p className="text-lg font-bold" style={{ color: '#1a2b4a' }}>{selectedDetails?.userReactions.length || 0}</p>
-                  <p className="text-[10px]" style={{ color: '#8a93a2' }}>Réactions</p>
-                </div>
-              </div>
-
-              {/* Bouton export RGPD */}
-              <button
-                onClick={handleExportRGPD}
-                disabled={exporting}
-                className="w-full py-3 rounded-2xl text-sm font-semibold mt-5 transition-all"
-                style={{
-                  backgroundColor: exporting ? '#f4f5f7' : 'white',
-                  color: exporting ? '#8a93a2' : '#1a2b4a',
-                  border: '1px solid #1a2b4a',
-                }}>
-                {exporting ? 'Génération en cours...' : '📄 Exporter les données (RGPD)'}
-              </button>
             </div>
           </div>
         )}
