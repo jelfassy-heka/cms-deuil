@@ -13,6 +13,7 @@ import AllBeneficiaries from './AllBeneficiaries'
 import Analytics from './Analytics'
 import NotificationCenter from './NotificationCenter'
 import GlobalSearch from './GlobalSearch'
+import Cocon from './Cocon'
 
 const APP_USERS_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8/app-users'
 
@@ -23,6 +24,7 @@ const navItems = [
   { label: 'CRM', icon: 'crm', path: 'crm' },
   { label: 'Utilisateurs', icon: 'users', path: 'users' },
   { label: 'Tous les salariés', icon: 'beneficiaries', path: 'all-beneficiaries' },
+  { label: 'Cocon', icon: 'cocon', path: 'cocon' },
   { label: 'Générateur de codes', icon: 'codes', path: 'codes' },
   { label: 'Gestion des accès', icon: 'accounts', path: 'accounts' },
   { label: 'Analytics', icon: 'analytics', path: 'analytics' },
@@ -101,6 +103,12 @@ function NavIcon({ icon, active }) {
           <rect x="1" y="9" width="3" height="5" rx="1" fill={color}/>
           <rect x="6" y="5" width="3" height="9" rx="1" fill={color}/>
           <rect x="11" y="2" width="3" height="12" rx="1" fill={color}/>
+        </svg>
+      )
+    case 'cocon':
+      return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M8 14s-5-3-5-7a3 3 0 0 1 5-2.2A3 3 0 0 1 13 7c0 4-5 7-5 7Z" stroke={color} strokeWidth="1.3" strokeLinejoin="round"/>
         </svg>
       )
     default:
@@ -503,6 +511,7 @@ export default function AdminDashboard() {
         {activePage === 'activity-log' && <ActivityLog />}
         {activePage === 'all-beneficiaries' && <AllBeneficiaries />}
         {activePage === 'analytics' && <Analytics />}
+        {activePage === 'cocon' && <Cocon />}
       </div>
     </div>
   )
