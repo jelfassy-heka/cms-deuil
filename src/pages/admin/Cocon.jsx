@@ -1,6 +1,11 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import xanoApp from '../../lib/xanoApp'
 import { SkeletonStats, SkeletonList, EmptyState, Toast, useToast } from '../../components/SharedUI'
+
+const APP_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8'
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 export default function Cocon() {
   const [subjects, setSubjects] = useState([])
@@ -159,29 +164,40 @@ export default function Cocon() {
       return
     }
 
+    let endpoint, method, payload, successMsg
+    if (drawerState.mode === 'create-subject') {
+      endpoint = 'admin-subject-create'
+      method = 'POST'
+      payload = { ...formData, position: subjects.length + 1 }
+      successMsg = 'Thème créé'
+    } else if (drawerState.mode === 'edit-subject') {
+      endpoint = 'admin-subject-update'
+      method = 'POST'
+      payload = formData
+      successMsg = 'Thème modifié'
+    } else if (drawerState.mode === 'create-session') {
+      const sessionsInSubject = sessions.filter(s => s.sessionSubjectId === formData.sessionSubjectId)
+      endpoint = 'admin-session-create'
+      method = 'POST'
+      payload = { ...formData, position: sessionsInSubject.length + 1 }
+      successMsg = 'Séance créée'
+    } else {
+      endpoint = 'admin-session-update'
+      method = 'PATCH'
+      payload = formData
+      successMsg = 'Séance modifiée'
+    }
+
+    const body = buildFormData(payload)
+
     setSaving(true)
     try {
-      if (drawerState.mode === 'create-subject') {
-        await xanoApp.post('admin-subject-create', {
-          ...formData,
-          position: subjects.length + 1,
-        })
-        showToast('Thème créé', 'success')
-      } else if (drawerState.mode === 'edit-subject') {
-        await xanoApp.patch('admin-subject-update', formData)
-        showToast('Thème modifié', 'success')
-      } else if (drawerState.mode === 'create-session') {
-        const sessionsInSubject = sessions.filter(s => s.sessionSubjectId === formData.sessionSubjectId)
-        await xanoApp.post('admin-session-create', {
-          ...formData,
-          position: sessionsInSubject.length + 1,
-        })
-        showToast('Séance créée', 'success')
-      } else if (drawerState.mode === 'edit-session') {
-        await xanoApp.patch('admin-session-update', formData)
-        showToast('Séance modifiée', 'success')
+      const res = await fetch(`${APP_BASE}/${endpoint}`, { method, body })
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        throw new Error(`${res.status} ${res.statusText}${text ? ' — ' + text : ''}`)
       }
-
+      showToast(successMsg, 'success')
       setDrawerState(null)
       await fetchAll()
     } catch (err) {
@@ -340,6 +356,7 @@ export default function Cocon() {
           onSubjectChange={handleSubjectChange}
           onApplyNewThemeColors={applyNewThemeColors}
           onDismissColorPrompt={() => setColorChangePrompt(null)}
+          showToast={showToast}
         />
       )}
     </div>
@@ -349,7 +366,7 @@ export default function Cocon() {
 // ─── Drawer ────────────────────────────────────────
 function Drawer({
   drawerState, formData, setFormData, subjects, saving, colorChangePrompt,
-  onClose, onSave, onSubjectChange, onApplyNewThemeColors, onDismissColorPrompt,
+  onClose, onSave, onSubjectChange, onApplyNewThemeColors, onDismissColorPrompt, showToast,
 }) {
   const isSubject = drawerState.mode === 'create-subject' || drawerState.mode === 'edit-subject'
   const isCreate = drawerState.mode.startsWith('create-')
@@ -398,7 +415,7 @@ function Drawer({
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {isSubject ? (
-            <SubjectForm formData={formData} update={update} inputStyle={inputStyle} />
+            <SubjectForm formData={formData} update={update} inputStyle={inputStyle} showToast={showToast} />
           ) : (
             <SessionForm
               formData={formData}
@@ -410,6 +427,7 @@ function Drawer({
               onApplyNewThemeColors={onApplyNewThemeColors}
               onDismissColorPrompt={onDismissColorPrompt}
               isCreate={isCreate}
+              showToast={showToast}
             />
           )}
         </div>
@@ -436,7 +454,7 @@ function Drawer({
 }
 
 // ─── SubjectForm ──────────────────────────────────
-function SubjectForm({ formData, update, inputStyle }) {
+function SubjectForm({ formData, update, inputStyle, showToast }) {
   const colorFields = [
     { key: 'backgroundColor', label: 'Couleur fond' },
     { key: 'titleColor', label: 'Couleur titre' },
@@ -476,6 +494,16 @@ function SubjectForm({ formData, update, inputStyle }) {
         />
       </Field>
 
+      <div>
+        <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Image</p>
+        <ImageUpload
+          label="Thumbnail"
+          value={formData.thumbnail}
+          onChange={(file) => update({ thumbnail: file })}
+          showToast={showToast}
+        />
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <Field label="Type *">
           <select
@@ -484,16 +512,16 @@ function SubjectForm({ formData, update, inputStyle }) {
             className="w-full px-3 py-2.5 rounded-xl text-sm"
             style={inputStyle}>
             <option value="therapy">Therapy</option>
-            <option value="exercice">Exercice</option>
+            <option value="exercise">Exercice</option>
           </select>
         </Field>
         <Field label="Type d'exercice">
           <select
             value={formData.exerciseType || ''}
             onChange={e => update({ exerciseType: e.target.value })}
-            disabled={formData.type !== 'exercice'}
+            disabled={formData.type !== 'exercise'}
             className="w-full px-3 py-2.5 rounded-xl text-sm"
-            style={{ ...inputStyle, opacity: formData.type !== 'exercice' ? 0.5 : 1 }}>
+            style={{ ...inputStyle, opacity: formData.type !== 'exercise' ? 0.5 : 1 }}>
             <option value="">—</option>
             <option value="meditation">Méditation</option>
             <option value="breathing">Respiration</option>
@@ -536,7 +564,7 @@ function SubjectForm({ formData, update, inputStyle }) {
 // ─── SessionForm ──────────────────────────────────
 function SessionForm({
   formData, update, subjects, inputStyle, colorChangePrompt,
-  onSubjectChange, onApplyNewThemeColors, onDismissColorPrompt, isCreate,
+  onSubjectChange, onApplyNewThemeColors, onDismissColorPrompt, isCreate, showToast,
 }) {
   return (
     <div className="space-y-4">
@@ -614,7 +642,7 @@ function SessionForm({
             className="w-full px-3 py-2.5 rounded-xl text-sm"
             style={inputStyle}>
             <option value="therapy">Therapy</option>
-            <option value="exercice">Exercice</option>
+            <option value="exercise">Exercice</option>
           </select>
         </Field>
       </div>
@@ -623,9 +651,9 @@ function SessionForm({
         <select
           value={formData.exerciseType || ''}
           onChange={e => update({ exerciseType: e.target.value })}
-          disabled={formData.type !== 'exercice'}
+          disabled={formData.type !== 'exercise'}
           className="w-full px-3 py-2.5 rounded-xl text-sm"
-          style={{ ...inputStyle, opacity: formData.type !== 'exercice' ? 0.5 : 1 }}>
+          style={{ ...inputStyle, opacity: formData.type !== 'exercise' ? 0.5 : 1 }}>
           <option value="">—</option>
           <option value="meditation">Méditation</option>
           <option value="breathing">Respiration</option>
@@ -639,6 +667,30 @@ function SessionForm({
         <div className="grid grid-cols-2 gap-3">
           <ColorInput label="Couleur fond" value={formData.color} onChange={v => update({ color: v })} inputStyle={inputStyle} />
           <ColorInput label="Couleur typo" value={formData.colorTypo} onChange={v => update({ colorTypo: v })} inputStyle={inputStyle} />
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Images</p>
+        <div className="grid grid-cols-3 gap-3">
+          <ImageUpload
+            label="Cover"
+            value={formData.cover}
+            onChange={(file) => update({ cover: file })}
+            showToast={showToast}
+          />
+          <ImageUpload
+            label="Thumbnail"
+            value={formData.thumbNail}
+            onChange={(file) => update({ thumbNail: file })}
+            showToast={showToast}
+          />
+          <ImageUpload
+            label="Player Image"
+            value={formData.playerImage}
+            onChange={(file) => update({ playerImage: file })}
+            showToast={showToast}
+          />
         </div>
       </div>
 
@@ -720,4 +772,92 @@ function ColorInput({ label, value, onChange, inputStyle }) {
       </div>
     </div>
   )
+}
+
+// ─── ImageUpload ──────────────────────────────────
+function ImageUpload({ label, value, onChange, showToast }) {
+  const inputRef = useRef(null)
+  const [objectUrl, setObjectUrl] = useState(null)
+
+  useEffect(() => {
+    if (value instanceof File) {
+      const url = URL.createObjectURL(value)
+      setObjectUrl(url)
+      return () => URL.revokeObjectURL(url)
+    }
+    setObjectUrl(null)
+  }, [value])
+
+  const previewUrl = objectUrl || (value && typeof value === 'object' && value.url) || null
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      showToast('Format invalide (JPEG, PNG ou WebP attendu)', 'error')
+      return
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      showToast('Taille max 5 Mo', 'error')
+      return
+    }
+    onChange(file)
+  }
+
+  const openPicker = () => inputRef.current?.click()
+
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1" style={{ color: '#8a93a2' }}>{label}</label>
+      <button
+        type="button"
+        onClick={openPicker}
+        className="w-full aspect-square rounded-xl flex items-center justify-center overflow-hidden transition-colors"
+        style={{
+          backgroundColor: '#f4f5f7',
+          border: previewUrl ? '1px solid #eef0f2' : '2px dashed #d4d8df',
+          maxWidth: '120px',
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#eef0f2' }}
+        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#f4f5f7' }}
+        title={previewUrl ? 'Cliquer pour remplacer' : 'Ajouter une image'}>
+        {previewUrl ? (
+          <img src={previewUrl} alt={label} className="w-full h-full object-cover" />
+        ) : (
+          <div className="flex flex-col items-center gap-1">
+            <span className="text-2xl leading-none" style={{ color: '#8a93a2' }}>+</span>
+            <span className="text-[10px] text-center px-1" style={{ color: '#8a93a2' }}>Ajouter une image</span>
+          </div>
+        )}
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        onChange={handleFile}
+        hidden
+      />
+    </div>
+  )
+}
+
+// ─── FormData builder ─────────────────────────────
+function buildFormData(payload) {
+  const fd = new FormData()
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined || value === null) continue
+    if (value instanceof File) {
+      fd.append(key, value)
+    } else if (typeof value === 'object') {
+      // Existing image object {url, ...} — never re-send. Skip.
+      continue
+    } else if (typeof value === 'string') {
+      if (value === '') continue
+      fd.append(key, value)
+    } else if (typeof value === 'number' || typeof value === 'boolean') {
+      fd.append(key, String(value))
+    }
+  }
+  return fd
 }
