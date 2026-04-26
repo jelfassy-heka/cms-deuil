@@ -1,5 +1,13 @@
 // scripts/migrate-positions.js
 // Script de migration : peuple le champ `position` sur les lignes existantes
+// 
+// Prérequis :
+//   - Endpoints publics /admin-subjects, /admin-sessions, /admin-videos créés
+//   - Endpoints PATCH (CRUD natifs) passés temporairement en public:
+//     • PATCH /therapy_session_subjects/{id}
+//     • PATCH /therapy_sessions/{id}
+//     • PATCH /session_videos/{id}
+//   - Le champ `position` doit être de type `integer` simple (pas integer[], pas text)
 
 const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8'
 
@@ -19,11 +27,16 @@ async function request(method, path, body = null) {
   return res.json()
 }
 
+function asArray(data) {
+  if (Array.isArray(data)) return data
+  if (data && Array.isArray(data.items)) return data.items
+  return []
+}
+
 async function migrateSubjects() {
   console.log('\n📚 Migration des thèmes...')
-  const subjects = await request('GET', '/admin-subjects')
-  const sorted = (Array.isArray(subjects) ? subjects : subjects.items || [])
-    .sort((a, b) => a.id - b.id)
+  const data = await request('GET', '/admin-subjects')
+  const sorted = asArray(data).sort((a, b) => a.id - b.id)
   
   console.log(`   ${sorted.length} thèmes trouvés`)
   
@@ -46,8 +59,8 @@ async function migrateSubjects() {
 
 async function migrateSessions() {
   console.log('\n🎬 Migration des séances...')
-  const sessions = await request('GET', '/admin-sessions')
-  const allSessions = Array.isArray(sessions) ? sessions : sessions.items || []
+  const data = await request('GET', '/admin-sessions')
+  const allSessions = asArray(data)
   
   const grouped = {}
   for (const session of allSessions) {
@@ -82,8 +95,13 @@ async function migrateSessions() {
 
 async function migrateVideos() {
   console.log('\n🎥 Migration des cuts vidéo...')
-  const videos = await request('GET', '/admin-videos')
-  const allVideos = Array.isArray(videos) ? videos : videos.items || []
+  const data = await request('GET', '/admin-videos')
+  const allVideos = asArray(data)
+  
+  if (allVideos.length === 0) {
+    console.log('   ⚠️  Aucun cut vidéo trouvé')
+    return
+  }
   
   const grouped = {}
   for (const video of allVideos) {
