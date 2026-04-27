@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import xanoApp from '../../lib/xanoApp'
-import { SkeletonStats, SkeletonList, EmptyState, Toast, useToast } from '../../components/SharedUI'
+import { SkeletonStats, SkeletonList, EmptyState, Toast, useToast, useConfirm } from '../../components/SharedUI'
 
 const APP_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8'
 
@@ -26,7 +26,9 @@ export default function Cocon() {
   const [saving, setSaving] = useState(false)
   const [colorChangePrompt, setColorChangePrompt] = useState(null)
   const [cutToDelete, setCutToDelete] = useState(null)
+  const [deletingCut, setDeletingCut] = useState(false)
   const { toast, clearToast, showToast } = useToast()
+  const { confirm, ConfirmDialog } = useConfirm()
 
   const fetchAll = useCallback(async () => {
     const [subj, sess, vid] = await Promise.all([
@@ -91,26 +93,32 @@ export default function Cocon() {
 
   // ─── Drawer lifecycle ────────────────────────────
   const lastInitializedDrawerRef = useRef(null)
+  const initialFormDataRef = useRef({})
   useEffect(() => {
     setColorChangePrompt(null)
     if (!drawerState) {
       lastInitializedDrawerRef.current = null
+      initialFormDataRef.current = {}
       setFormData({})
       return
     }
     if (lastInitializedDrawerRef.current === drawerState) return
     lastInitializedDrawerRef.current = drawerState
+    const setInitial = (value) => {
+      initialFormDataRef.current = value
+      setFormData(value)
+    }
     if (drawerState._restoredFormData) {
-      setFormData(drawerState._restoredFormData)
+      setInitial(drawerState._restoredFormData)
       return
     }
     if (drawerState.mode === 'create-subject') {
-      setFormData({ status: 'draft', type: 'therapy' })
+      setInitial({ status: 'draft', type: 'therapy' })
     } else if (drawerState.mode === 'edit-subject') {
-      setFormData({ ...drawerState.data })
+      setInitial({ ...drawerState.data })
     } else if (drawerState.mode === 'create-session') {
       const parentSubject = subjects.find(s => s.id === drawerState.subjectId)
-      setFormData({
+      setInitial({
         sessionSubjectId: drawerState.subjectId,
         type: parentSubject?.type || 'therapy',
         exerciseType: parentSubject?.exerciseType || '',
@@ -119,18 +127,18 @@ export default function Cocon() {
         avlForFree: false,
       })
     } else if (drawerState.mode === 'edit-session') {
-      setFormData({ ...drawerState.data })
+      setInitial({ ...drawerState.data })
     } else if (drawerState.mode === 'create-cut') {
       const existingCuts = videos.filter(v => v.sessionId === drawerState.parentSession.id)
       const newPosition = existingCuts.length > 0
         ? Math.max(...existingCuts.map(c => c.position)) + 1
         : 1
-      setFormData({
+      setInitial({
         sessionId: drawerState.parentSession.id,
         position: newPosition,
       })
     } else if (drawerState.mode === 'edit-cut') {
-      setFormData({ ...drawerState.data })
+      setInitial({ ...drawerState.data })
     }
   }, [drawerState, subjects, videos])
 
@@ -147,13 +155,21 @@ export default function Cocon() {
     })
   }, [drawerState, fetchAll])
 
-  const handleCloseDrawer = useCallback(() => {
+  const handleCloseDrawer = useCallback(async () => {
+    if (isFormDirty(formData, initialFormDataRef.current)) {
+      const ok = await confirm(
+        'Modifications non sauvegardées',
+        'Vos modifications seront perdues. Continuer ?',
+        { confirmLabel: 'Quitter', confirmColor: '#DC2626' }
+      )
+      if (!ok) return
+    }
     if (isCutMode) {
       closeCutDrawer()
     } else {
       setDrawerState(null)
     }
-  }, [isCutMode, closeCutDrawer])
+  }, [isCutMode, closeCutDrawer, formData, confirm])
 
   // Escape closes drawer (returns to session if in cut mode)
   useEffect(() => {
@@ -192,6 +208,7 @@ export default function Cocon() {
   }
 
   const handleDeleteCut = async (cut) => {
+    setDeletingCut(true)
     try {
       await xanoApp.post('admin-cut-delete', { id: cut.id })
       const cutsToDecrement = videos
@@ -206,6 +223,8 @@ export default function Cocon() {
     } catch (err) {
       showToast('Erreur lors de la suppression: ' + err.message, 'error')
       setCutToDelete(null)
+    } finally {
+      setDeletingCut(false)
     }
   }
 
@@ -411,7 +430,13 @@ export default function Cocon() {
             <p className="text-xs uppercase tracking-wider font-semibold mb-2 px-1" style={{ color: '#8a93a2' }}>Thèmes</p>
 
             {sortedSubjects.length === 0 ? (
-              <EmptyState icon="📚" title="Aucun thème" message="Aucun thème créé pour l'instant" />
+              <EmptyState
+                icon="📚"
+                title="Aucun thème"
+                message="Créez votre premier thème pour commencer."
+                actionLabel="+ Créer le premier thème"
+                onAction={() => setDrawerState({ mode: 'create-subject' })}
+              />
             ) : (
               sortedSubjects.map((subject, idx) => {
                 const sessionsCount = sessions.filter(s => s.sessionSubjectId === subject.id).length
@@ -470,7 +495,13 @@ export default function Cocon() {
             </div>
 
             {selectedSessions.length === 0 ? (
-              <EmptyState icon="🎬" title="Aucune séance" message="Aucune séance dans ce thème pour l'instant" />
+              <EmptyState
+                icon="🎬"
+                title="Aucune séance"
+                message="Ce thème ne contient aucune séance. Créez la première."
+                actionLabel="+ Créer la première séance"
+                onAction={() => selectedSubjectId && setDrawerState({ mode: 'create-session', subjectId: selectedSubjectId })}
+              />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {selectedSessions.map((session, idx) => {
@@ -532,10 +563,13 @@ export default function Cocon() {
       {cutToDelete && (
         <DeleteCutModal
           cut={cutToDelete}
-          onCancel={() => setCutToDelete(null)}
+          loading={deletingCut}
+          onCancel={() => !deletingCut && setCutToDelete(null)}
           onConfirm={() => handleDeleteCut(cutToDelete)}
         />
       )}
+
+      {ConfirmDialog}
     </div>
   )
 }
@@ -552,24 +586,23 @@ function Drawer({
 
   let breadcrumb, drawerTitle
   if (drawerState.mode === 'create-subject') {
-    breadcrumb = 'Cocon · Thèmes'
+    breadcrumb = 'Thèmes'
     drawerTitle = 'Nouveau thème'
   } else if (drawerState.mode === 'edit-subject') {
-    breadcrumb = `Cocon · Thèmes · ${drawerState.data.title || ''}`
+    breadcrumb = `Thèmes · ${drawerState.data.title || ''}`
     drawerTitle = 'Modifier le thème'
   } else if (drawerState.mode === 'create-session') {
     const parent = subjects.find(s => s.id === drawerState.subjectId)
-    breadcrumb = `Cocon · ${parent?.title || ''} · Séances`
+    breadcrumb = `${parent?.title || ''}`
     drawerTitle = 'Nouvelle séance'
   } else if (drawerState.mode === 'edit-session') {
     const parent = subjects.find(s => s.id === drawerState.data.sessionSubjectId)
-    breadcrumb = `Cocon · ${parent?.title || ''} · Séances`
+    breadcrumb = `${parent?.title || ''}`
     drawerTitle = 'Modifier la séance'
   } else {
     // Cut modes
     const parentSession = drawerState.parentSession
-    const parentSubject = subjects.find(s => s.id === parentSession?.sessionSubjectId)
-    breadcrumb = `Cocon · ${parentSubject?.title || ''} · ${parentSession?.title || ''} · Cuts`
+    breadcrumb = `${parentSession?.title || ''}`
     drawerTitle = drawerState.mode === 'create-cut'
       ? 'Nouveau cut'
       : `Cut #${formData.position || ''}`
@@ -579,19 +612,28 @@ function Drawer({
 
   const inputStyle = { backgroundColor: '#f4f5f7', border: '1px solid #eef0f2', color: '#1a2b4a' }
 
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setMounted(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
+
   return (
     <>
       <div
         onClick={onClose}
-        className="fixed inset-0 z-40"
-        style={{ backgroundColor: 'rgba(26, 43, 74, 0.4)' }}
+        className="fixed inset-0 z-40 transition-opacity duration-200 ease-out"
+        style={{ backgroundColor: 'rgba(26, 43, 74, 0.4)', opacity: mounted ? 1 : 0 }}
       />
       <div
-        className="fixed right-0 top-0 bottom-0 w-full md:w-[480px] bg-white z-50 flex flex-col"
-        style={{ boxShadow: '-8px 0 32px rgba(0,0,0,0.08)' }}>
+        className="fixed right-0 top-0 bottom-0 w-full md:w-[460px] bg-white z-50 flex flex-col transition-transform duration-300 ease-out"
+        style={{
+          boxShadow: '-8px 0 32px rgba(0,0,0,0.08)',
+          transform: mounted ? 'translateX(0)' : 'translateX(100%)',
+        }}>
 
         {/* Header */}
-        <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: '#f4f5f7' }}>
+        <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '0.5px solid #eef0f2' }}>
           <div>
             <p className="text-xs" style={{ color: '#8a93a2' }}>{breadcrumb}</p>
             <p className="text-sm font-semibold mt-0.5" style={{ color: '#1a2b4a' }}>{drawerTitle}</p>
@@ -632,7 +674,7 @@ function Drawer({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t flex gap-2" style={{ borderColor: '#f4f5f7' }}>
+        <div className="px-5 py-4 flex gap-2" style={{ borderTop: '0.5px solid #eef0f2' }}>
           <button
             onClick={onClose}
             className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold"
@@ -644,7 +686,12 @@ function Drawer({
             disabled={saving}
             className="flex-[2] px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
             style={{ backgroundColor: '#2BBFB3', opacity: saving ? 0.6 : 1, cursor: saving ? 'wait' : 'pointer' }}>
-            {saving ? 'Enregistrement...' : 'Enregistrer'}
+            {saving ? (
+              <span className="flex items-center justify-center gap-2">
+                <Spinner color="white" />
+                Enregistrement...
+              </span>
+            ) : 'Enregistrer'}
           </button>
         </div>
       </div>
@@ -705,7 +752,9 @@ function SubjectForm({ formData, update, inputStyle, showToast }) {
       <div>
         <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Image</p>
         <ImageUpload
-          label="Thumbnail"
+          label="Thumbnail (21:9)"
+          aspectRatio="21 / 9"
+          maxWidth="100%"
           value={formData.thumbnail}
           onChange={(file) => update({ thumbnail: file })}
           showToast={showToast}
@@ -919,22 +968,28 @@ function SessionForm({
 
       <div>
         <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Images</p>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="space-y-4">
           <ImageUpload
-            label="Cover"
+            label="Cover (1:2)"
+            aspectRatio="1 / 2"
+            maxWidth="180px"
             value={formData.cover}
             onChange={(file) => update({ cover: file })}
             showToast={showToast}
           />
           <ImageUpload
-            label="Thumbnail"
+            label="Thumbnail (21:9)"
+            aspectRatio="21 / 9"
+            maxWidth="100%"
             value={formData.thumbNail}
             onChange={(file) => update({ thumbNail: file })}
             showToast={showToast}
           />
           {showPlayerImage && (
             <ImageUpload
-              label="Player Image"
+              label="Lecteur (9:19.5)"
+              aspectRatio="9 / 19.5"
+              maxWidth="160px"
               value={formData.playerImage}
               onChange={(file) => update({ playerImage: file })}
               showToast={showToast}
@@ -962,9 +1017,12 @@ function SessionForm({
           </p>
           <div className="space-y-2">
             {sessionCuts.length === 0 ? (
-              <p className="text-sm" style={{ color: '#8a93a2' }}>
-                Aucun cut pour le moment
-              </p>
+              <div className="flex flex-col items-center justify-center py-6 px-3 rounded-xl" style={{ backgroundColor: '#fafbfc', border: '1px dashed #eef0f2' }}>
+                <span className="text-2xl mb-1" style={{ opacity: 0.5 }}>🎬</span>
+                <p className="text-xs text-center" style={{ color: '#8a93a2' }}>
+                  Aucun cut vidéo. Cliquez sur « + Ajouter un cut » pour en créer un.
+                </p>
+              </div>
             ) : (
               sessionCuts.map((cut, idx) => (
                 <CutListItem
@@ -1052,7 +1110,7 @@ function ColorInput({ label, value, onChange, inputStyle }) {
 }
 
 // ─── ImageUpload ──────────────────────────────────
-function ImageUpload({ label, value, onChange, showToast }) {
+function ImageUpload({ label, value, onChange, showToast, aspectRatio = '1 / 1', maxWidth = '120px' }) {
   const inputRef = useRef(null)
   const [objectUrl, setObjectUrl] = useState(null)
 
@@ -1090,11 +1148,12 @@ function ImageUpload({ label, value, onChange, showToast }) {
       <button
         type="button"
         onClick={openPicker}
-        className="w-full aspect-square rounded-xl flex items-center justify-center overflow-hidden transition-colors"
+        className="w-full rounded-xl flex items-center justify-center overflow-hidden transition-colors"
         style={{
           backgroundColor: '#f4f5f7',
           border: previewUrl ? '1px solid #eef0f2' : '2px dashed #d4d8df',
-          maxWidth: '120px',
+          maxWidth: maxWidth,
+          aspectRatio: aspectRatio,
         }}
         onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#eef0f2' }}
         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#f4f5f7' }}
@@ -1383,17 +1442,23 @@ function CutForm({ formData, update, inputStyle, showToast }) {
 }
 
 // ─── DeleteCutModal ───────────────────────────────
-function DeleteCutModal({ onCancel, onConfirm }) {
+function DeleteCutModal({ onCancel, onConfirm, loading }) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setMounted(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
+
   return (
     <>
       <div
-        onClick={onCancel}
-        className="fixed inset-0 z-[60]"
-        style={{ backgroundColor: 'rgba(26, 43, 74, 0.5)' }}
+        onClick={loading ? undefined : onCancel}
+        className="fixed inset-0 z-[60] transition-opacity duration-150"
+        style={{ backgroundColor: 'rgba(26, 43, 74, 0.5)', opacity: mounted ? 1 : 0 }}
       />
       <div
-        className="fixed left-1/2 top-1/2 z-[70] bg-white rounded-2xl p-5 w-[90%] max-w-md"
-        style={{ transform: 'translate(-50%, -50%)', boxShadow: '0 16px 48px rgba(0,0,0,0.18)' }}>
+        className="fixed left-1/2 top-1/2 z-[70] bg-white rounded-2xl p-5 w-[90%] max-w-md transition-opacity duration-150"
+        style={{ transform: 'translate(-50%, -50%)', boxShadow: '0 16px 48px rgba(0,0,0,0.18)', opacity: mounted ? 1 : 0 }}>
         <p className="text-base font-semibold mb-2" style={{ color: '#1a2b4a' }}>Supprimer ce cut ?</p>
         <p className="text-sm mb-5" style={{ color: '#8a93a2' }}>
           Cette action est irréversible. Le fichier vidéo associé sera également supprimé.
@@ -1401,20 +1466,55 @@ function DeleteCutModal({ onCancel, onConfirm }) {
         <div className="flex gap-2">
           <button
             onClick={onCancel}
+            disabled={loading}
             className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold"
-            style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }}>
+            style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a', opacity: loading ? 0.6 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}>
             Annuler
           </button>
           <button
             onClick={onConfirm}
-            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
-            style={{ backgroundColor: '#DC2626' }}>
-            Supprimer
+            disabled={loading}
+            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+            style={{ backgroundColor: '#DC2626', opacity: loading ? 0.6 : 1, cursor: loading ? 'wait' : 'pointer' }}>
+            {loading ? (<><Spinner color="white" /> Suppression...</>) : 'Supprimer'}
           </button>
         </div>
       </div>
     </>
   )
+}
+
+// ─── Spinner ──────────────────────────────────────
+function Spinner({ size = 14, color = 'currentColor' }) {
+  return (
+    <span
+      className="inline-block animate-spin rounded-full"
+      style={{
+        width: size,
+        height: size,
+        border: `2px solid ${color}`,
+        borderTopColor: 'transparent',
+      }}
+    />
+  )
+}
+
+// ─── Dirty form detection ─────────────────────────
+function isFormDirty(current, initial) {
+  const keys = new Set([...Object.keys(current || {}), ...Object.keys(initial || {})])
+  for (const k of keys) {
+    const c = current?.[k]
+    const i = initial?.[k]
+    if (c instanceof File) return true
+    if (typeof c === 'object' && typeof i === 'object' && c !== null && i !== null) {
+      if (c === i) continue
+      return true
+    }
+    const cNorm = (c === null || c === undefined) ? '' : c
+    const iNorm = (i === null || i === undefined) ? '' : i
+    if (cNorm !== iNorm) return true
+  }
+  return false
 }
 
 // ─── FormData builder ─────────────────────────────
