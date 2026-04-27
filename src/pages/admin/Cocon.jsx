@@ -3,6 +3,7 @@ import xanoApp from '../../lib/xanoApp'
 import { SkeletonStats, SkeletonList, EmptyState, Toast, useToast, useConfirm } from '../../components/SharedUI'
 
 const APP_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8'
+const AUTH_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:IS_IPWIL'
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
@@ -27,6 +28,7 @@ export default function Cocon() {
   const [colorChangePrompt, setColorChangePrompt] = useState(null)
   const [cutToDelete, setCutToDelete] = useState(null)
   const [deletingCut, setDeletingCut] = useState(false)
+  const [sessionToDelete, setSessionToDelete] = useState(null)
   const { toast, clearToast, showToast } = useToast()
   const { confirm, ConfirmDialog } = useConfirm()
 
@@ -226,6 +228,41 @@ export default function Cocon() {
     } finally {
       setDeletingCut(false)
     }
+  }
+
+  const handleDeleteSession = async (password) => {
+    const authToken = localStorage.getItem('heka_auth_token')
+    const verifyResp = await fetch(`${AUTH_BASE}/verify-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ password }),
+    })
+    if (!verifyResp.ok) {
+      const err = new Error('Mot de passe incorrect')
+      err.code = 'INVALID_PASSWORD'
+      throw err
+    }
+
+    const res = await fetch(`${APP_BASE}/admin-session-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: sessionToDelete.id }),
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`Suppression échouée : ${res.status}${text ? ' — ' + text : ''}`)
+    }
+
+    showToast('Séance supprimée', 'success')
+    const deletedId = sessionToDelete.id
+    setSessionToDelete(null)
+    if (drawerState?.mode === 'edit-session' && drawerState.data.id === deletedId) {
+      setDrawerState(null)
+    }
+    await fetchAll()
   }
 
   const handleSubjectChange = (newSubjectId) => {
@@ -511,8 +548,15 @@ export default function Cocon() {
                     <div
                       key={session.id}
                       onClick={() => setDrawerState({ mode: 'edit-session', data: session })}
-                      className="rounded-xl p-3 cursor-pointer transition-all hover:shadow-md"
+                      className="relative group rounded-xl p-3 cursor-pointer transition-all hover:shadow-md"
                       style={{ border: '1px solid #f4f5f7', backgroundColor: '#fafbfc' }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSessionToDelete(session) }}
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-md"
+                        style={{ backgroundColor: 'rgba(255,255,255,0.9)', color: '#DC2626', fontSize: '12px' }}
+                        title="Supprimer la séance">
+                        🗑️
+                      </button>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>
                           Séance {idx + 1}
@@ -556,6 +600,7 @@ export default function Cocon() {
           onOpenCutDrawer={openCutDrawer}
           onMoveCut={handleMoveCut}
           onRequestDeleteCut={setCutToDelete}
+          onRequestDeleteSession={setSessionToDelete}
         />
       )}
 
@@ -569,6 +614,16 @@ export default function Cocon() {
         />
       )}
 
+      {/* Delete session confirmation modal */}
+      {sessionToDelete && (
+        <DeleteSessionModal
+          session={sessionToDelete}
+          cutsCount={videos.filter(v => v.sessionId === sessionToDelete.id).length}
+          onCancel={() => setSessionToDelete(null)}
+          onConfirm={handleDeleteSession}
+        />
+      )}
+
       {ConfirmDialog}
     </div>
   )
@@ -578,7 +633,7 @@ export default function Cocon() {
 function Drawer({
   drawerState, formData, setFormData, subjects, videos, saving, colorChangePrompt,
   onClose, onSave, onSubjectChange, onApplyNewThemeColors, onDismissColorPrompt, showToast,
-  onOpenCutDrawer, onMoveCut, onRequestDeleteCut,
+  onOpenCutDrawer, onMoveCut, onRequestDeleteCut, onRequestDeleteSession,
 }) {
   const isSubject = drawerState.mode === 'create-subject' || drawerState.mode === 'edit-subject'
   const isCut = drawerState.mode === 'create-cut' || drawerState.mode === 'edit-cut'
@@ -638,7 +693,20 @@ function Drawer({
             <p className="text-xs" style={{ color: '#8a93a2' }}>{breadcrumb}</p>
             <p className="text-sm font-semibold mt-0.5" style={{ color: '#1a2b4a' }}>{drawerTitle}</p>
           </div>
-          <button onClick={onClose} className="text-xl px-2" style={{ color: '#8a93a2' }}>✕</button>
+          <div className="flex items-center gap-1">
+            {drawerState.mode === 'edit-session' && (
+              <button
+                onClick={() => onRequestDeleteSession(drawerState.data)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+                style={{ color: '#DC2626' }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#FEE2E2' }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                title="Supprimer la séance">
+                🗑️
+              </button>
+            )}
+            <button onClick={onClose} className="text-xl px-2" style={{ color: '#8a93a2' }} title="Fermer">✕</button>
+          </div>
         </div>
 
         {/* Content */}
@@ -969,32 +1037,40 @@ function SessionForm({
       <div>
         <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Images</p>
         <div className="space-y-4">
-          <ImageUpload
-            label="Cover (1:2)"
-            aspectRatio="1 / 2"
-            maxWidth="180px"
-            value={formData.cover}
-            onChange={(file) => update({ cover: file })}
-            showToast={showToast}
-          />
-          <ImageUpload
-            label="Thumbnail (21:9)"
-            aspectRatio="21 / 9"
-            maxWidth="100%"
-            value={formData.thumbNail}
-            onChange={(file) => update({ thumbNail: file })}
-            showToast={showToast}
-          />
-          {showPlayerImage && (
+          <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+            <div style={{ flex: showPlayerImage ? 1 : 'none', maxWidth: '220px' }}>
+              <ImageUpload
+                label="Cover (1:2)"
+                aspectRatio="1 / 2"
+                maxWidth="100%"
+                value={formData.cover}
+                onChange={(file) => update({ cover: file })}
+                showToast={showToast}
+              />
+            </div>
+            {showPlayerImage && (
+              <div style={{ flex: 1, maxWidth: '200px' }}>
+                <ImageUpload
+                  label="Lecteur (9:19.5)"
+                  aspectRatio="9 / 19.5"
+                  maxWidth="100%"
+                  value={formData.playerImage}
+                  onChange={(file) => update({ playerImage: file })}
+                  showToast={showToast}
+                />
+              </div>
+            )}
+          </div>
+          <div>
             <ImageUpload
-              label="Lecteur (9:19.5)"
-              aspectRatio="9 / 19.5"
-              maxWidth="160px"
-              value={formData.playerImage}
-              onChange={(file) => update({ playerImage: file })}
+              label="Thumbnail (21:9)"
+              aspectRatio="21 / 9"
+              maxWidth="100%"
+              value={formData.thumbNail}
+              onChange={(file) => update({ thumbNail: file })}
               showToast={showToast}
             />
-          )}
+          </div>
         </div>
       </div>
 
@@ -1476,6 +1552,99 @@ function DeleteCutModal({ onCancel, onConfirm, loading }) {
             disabled={loading}
             className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
             style={{ backgroundColor: '#DC2626', opacity: loading ? 0.6 : 1, cursor: loading ? 'wait' : 'pointer' }}>
+            {loading ? (<><Spinner color="white" /> Suppression...</>) : 'Supprimer'}
+          </button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ─── DeleteSessionModal ───────────────────────────
+function DeleteSessionModal({ session, cutsCount, onCancel, onConfirm }) {
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setMounted(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
+
+  const handleConfirm = async () => {
+    if (!password) {
+      setError('Saisissez votre mot de passe')
+      return
+    }
+    setError('')
+    setLoading(true)
+    try {
+      await onConfirm(password)
+    } catch (err) {
+      if (err?.code === 'INVALID_PASSWORD') {
+        setError('Mot de passe incorrect')
+      } else {
+        setError(err?.message || 'Erreur lors de la suppression')
+      }
+      setLoading(false)
+    }
+  }
+
+  return (
+    <>
+      <div
+        onClick={loading ? undefined : onCancel}
+        className="fixed inset-0 z-[60] transition-opacity duration-150"
+        style={{ backgroundColor: 'rgba(26, 43, 74, 0.5)', opacity: mounted ? 1 : 0 }}
+      />
+      <div
+        className="fixed left-1/2 top-1/2 z-[70] bg-white rounded-2xl p-5 w-[90%] max-w-md transition-opacity duration-150"
+        style={{ transform: 'translate(-50%, -50%)', boxShadow: '0 16px 48px rgba(0,0,0,0.18)', opacity: mounted ? 1 : 0 }}>
+        <p className="text-base font-semibold mb-2" style={{ color: '#DC2626' }}>
+          Supprimer cette séance ?
+        </p>
+        <p className="text-sm mb-4" style={{ color: '#8a93a2' }}>
+          La séance « <span style={{ color: '#1a2b4a', fontWeight: 600 }}>{session?.title}</span> »
+          {cutsCount > 0 ? `, ses ${cutsCount} cut${cutsCount > 1 ? 's' : ''} vidéo` : ''}
+          {' '}et tous les fichiers associés seront définitivement supprimés.
+          <br />
+          <span style={{ color: '#DC2626', fontWeight: 500 }}>Cette action est irréversible.</span>
+        </p>
+
+        <label className="block text-xs font-medium mb-1.5" style={{ color: '#8a93a2' }}>
+          Mot de passe admin
+        </label>
+        <input
+          type="password"
+          value={password}
+          onChange={e => { setPassword(e.target.value); setError('') }}
+          onKeyDown={e => { if (e.key === 'Enter' && !loading) handleConfirm() }}
+          placeholder="Votre mot de passe..."
+          autoFocus
+          disabled={loading}
+          className="w-full px-3 py-2.5 rounded-xl text-sm mb-1"
+          style={{ backgroundColor: '#f4f5f7', border: error ? '1px solid #DC2626' : '1px solid #eef0f2', color: '#1a2b4a' }}
+        />
+        {error ? (
+          <p className="text-xs mb-3" style={{ color: '#DC2626' }}>{error}</p>
+        ) : (
+          <div className="mb-4" />
+        )}
+
+        <div className="flex gap-2">
+          <button
+            onClick={onCancel}
+            disabled={loading}
+            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold"
+            style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a', opacity: loading ? 0.6 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}>
+            Annuler
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={loading || !password}
+            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+            style={{ backgroundColor: '#DC2626', opacity: (loading || !password) ? 0.6 : 1, cursor: (loading || !password) ? 'not-allowed' : 'pointer' }}>
             {loading ? (<><Spinner color="white" /> Suppression...</>) : 'Supprimer'}
           </button>
         </div>
