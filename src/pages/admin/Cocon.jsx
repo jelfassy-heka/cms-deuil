@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import xanoApp from '../../lib/xanoApp'
-import { SkeletonStats, SkeletonList, EmptyState, Toast, useToast, useConfirm } from '../../components/SharedUI'
+import { SkeletonStats, SkeletonList, Toast, useToast, useConfirm } from '../../components/SharedUI'
 
 const APP_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8'
 const AUTH_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:IS_IPWIL'
@@ -21,7 +21,7 @@ export default function Cocon() {
   const [sessions, setSessions] = useState([])
   const [videos, setVideos] = useState([])
   const [loading, setLoading] = useState(true)
-  const [selectedSubjectId, setSelectedSubjectId] = useState(null)
+  const [openSubjectIds, setOpenSubjectIds] = useState(() => new Set())
   const [drawerState, setDrawerState] = useState(null)
   const [formData, setFormData] = useState({})
   const [saving, setSaving] = useState(false)
@@ -47,11 +47,7 @@ export default function Cocon() {
   useEffect(() => {
     const init = async () => {
       try {
-        const { subj } = await fetchAll()
-        if (subj.length > 0 && selectedSubjectId === null) {
-          const sortedSubj = [...subj].sort((a, b) => (a.position || 0) - (b.position || 0) || a.id - b.id)
-          setSelectedSubjectId(sortedSubj[0].id)
-        }
+        await fetchAll()
       } catch (err) {
         showToast('Erreur chargement: ' + err.message, 'error')
       } finally {
@@ -66,11 +62,18 @@ export default function Cocon() {
     return [...subjects].sort((a, b) => (a.position || 0) - (b.position || 0) || a.id - b.id)
   }, [subjects])
 
-  const selectedSessions = useMemo(() => {
-    return sessions
-      .filter(s => s.sessionSubjectId === selectedSubjectId)
-      .sort((a, b) => (a.position || 0) - (b.position || 0) || a.id - b.id)
-  }, [sessions, selectedSubjectId])
+  const seancesSubjects = useMemo(
+    () => sortedSubjects.filter(s => s.type === 'therapy'),
+    [sortedSubjects]
+  )
+  const meditationsSubjects = useMemo(
+    () => sortedSubjects.filter(s => s.type === 'exercise' && s.exerciseType === 'meditation'),
+    [sortedSubjects]
+  )
+  const exercicesSubjects = useMemo(
+    () => sortedSubjects.filter(s => s.type === 'exercise' && s.exerciseType !== 'meditation'),
+    [sortedSubjects]
+  )
 
   const stats = useMemo(() => ({
     subjects: subjects.length,
@@ -78,20 +81,32 @@ export default function Cocon() {
     videos: videos.length,
   }), [subjects, sessions, videos])
 
-  const getSessionMeta = (sessionId) => {
-    const cuts = videos.filter(v => v.sessionId === sessionId)
-    const totalMin = cuts.reduce((sum, c) => sum + (parseFloat(c.durationMin) || 0), 0)
-    return { cutsCount: cuts.length, totalMin: Math.round(totalMin) }
-  }
+  const toggleSubject = useCallback((subjectId) => {
+    setOpenSubjectIds(prev => {
+      const next = new Set(prev)
+      if (next.has(subjectId)) {
+        next.delete(subjectId)
+      } else {
+        next.add(subjectId)
+        requestAnimationFrame(() => {
+          const panel = document.getElementById(`panel-subject-${subjectId}`)
+          panel?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        })
+      }
+      return next
+    })
+  }, [])
 
-  const statusBadge = (status) => {
-    const config = {
-      published: { bg: '#1D9E75', label: 'Published' },
-      review: { bg: '#BA7517', label: 'Review' },
-      draft: { bg: '#888780', label: 'Draft' },
-    }
-    return config[status] || config.draft
-  }
+  const closeAll = useCallback(() => setOpenSubjectIds(new Set()), [])
+
+  const handleCreateSubjectPrefilled = useCallback((blockKey) => {
+    const prefill = {
+      seances: { type: 'therapy' },
+      meditations: { type: 'exercise', exerciseType: 'meditation' },
+      exercices: { type: 'exercise' },
+    }[blockKey]
+    setDrawerState({ mode: 'create-subject', _prefilled: prefill })
+  }, [])
 
   // ─── Drawer lifecycle ────────────────────────────
   const lastInitializedDrawerRef = useRef(null)
@@ -115,7 +130,7 @@ export default function Cocon() {
       return
     }
     if (drawerState.mode === 'create-subject') {
-      setInitial({ status: 'draft', type: 'therapy' })
+      setInitial({ status: 'draft', type: 'therapy', ...(drawerState._prefilled || {}) })
     } else if (drawerState.mode === 'edit-subject') {
       setInitial({ ...drawerState.data })
     } else if (drawerState.mode === 'create-session') {
@@ -436,150 +451,66 @@ export default function Cocon() {
     )
   }
 
-  const selectedSubject = sortedSubjects.find(s => s.id === selectedSubjectId)
+  const blockProps = {
+    openSubjectIds,
+    onToggleSubject: toggleSubject,
+    videos,
+    sessions,
+    onEditSubject: (subject) => setDrawerState({ mode: 'edit-subject', data: subject }),
+    onCreateSubjectPrefilled: handleCreateSubjectPrefilled,
+    onCreateSession: (subjectId) => setDrawerState({ mode: 'create-session', subjectId }),
+    onEditSession: (session) => setDrawerState({ mode: 'edit-session', data: session }),
+    onDeleteSession: (session) => setSessionToDelete(session),
+  }
 
   return (
     <div>
+      <style>{`
+        .subject-card { transition: transform 0.1s ease-out, background 0.15s, border-color 0.15s; }
+        .subject-card:active { transform: scale(0.98); }
+        .subject-card:hover .subject-card-edit { opacity: 1; }
+        .session-row { transition: transform 0.1s ease-out, background 0.15s; }
+        .session-row:hover { background: #f4f5f7; }
+        .session-row:active { transform: scale(0.998); }
+        .session-row:hover .session-row-delete { opacity: 1; }
+      `}</style>
       <Toast toast={toast} onClose={clearToast} />
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-7 gap-3">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Cocon — Gestion du contenu</h1>
+          <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Cocon</h1>
           <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>
             {stats.subjects} thème{stats.subjects > 1 ? 's' : ''} · {stats.sessions} séance{stats.sessions > 1 ? 's' : ''} · {stats.videos} cut{stats.videos > 1 ? 's' : ''} vidéo
           </p>
         </div>
-        <button
-          onClick={() => setDrawerState({ mode: 'create-subject' })}
-          className="px-4 py-3 rounded-2xl text-sm font-semibold text-white"
-          style={{ backgroundColor: '#2BBFB3' }}>
-          + Nouveau thème
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {openSubjectIds.size > 0 && (
+            <button
+              onClick={closeAll}
+              style={{
+                background: 'white', color: '#8a93a2',
+                border: '0.5px solid #eef0f2', borderRadius: 12,
+                padding: '8px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer',
+              }}>
+              Tout fermer ({openSubjectIds.size})
+            </button>
+          )}
+          <button
+            onClick={() => setDrawerState({ mode: 'create-subject' })}
+            style={{
+              background: '#2BBFB3', color: 'white',
+              border: 'none', borderRadius: 12,
+              padding: '8px 16px', fontSize: 13, fontWeight: 500, cursor: 'pointer',
+            }}>
+            + Nouveau thème
+          </button>
+        </div>
       </div>
 
-      {/* Layout 2 colonnes */}
-      <div className="flex flex-col md:flex-row gap-4">
-
-        {/* Colonne thèmes */}
-        <div className="md:w-60 flex-shrink-0">
-          <div className="bg-white rounded-2xl p-3" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-            <p className="text-xs uppercase tracking-wider font-semibold mb-2 px-1" style={{ color: '#8a93a2' }}>Thèmes</p>
-
-            {sortedSubjects.length === 0 ? (
-              <EmptyState
-                icon="📚"
-                title="Aucun thème"
-                message="Créez votre premier thème pour commencer."
-                actionLabel="+ Créer le premier thème"
-                onAction={() => setDrawerState({ mode: 'create-subject' })}
-              />
-            ) : (
-              sortedSubjects.map((subject, idx) => {
-                const sessionsCount = sessions.filter(s => s.sessionSubjectId === subject.id).length
-                const isSelected = selectedSubjectId === subject.id
-                return (
-                  <div
-                    key={subject.id}
-                    onClick={() => setSelectedSubjectId(subject.id)}
-                    className="group relative cursor-pointer rounded-xl p-3 mb-2 transition-colors"
-                    style={{
-                      backgroundColor: isSelected ? (subject.backgroundColor || '#e8f8f7') : 'transparent',
-                      border: isSelected ? 'none' : '1px solid #f4f5f7',
-                    }}>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setDrawerState({ mode: 'edit-subject', data: subject }) }}
-                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-md"
-                      style={{ backgroundColor: 'rgba(255,255,255,0.7)', color: '#1a2b4a', fontSize: '12px' }}
-                      title="Modifier le thème">
-                      ✏️
-                    </button>
-                    <span
-                      className="inline-block text-xs px-2 py-0.5 rounded-full font-semibold mb-1"
-                      style={{
-                        backgroundColor: isSelected ? 'rgba(0,0,0,0.15)' : '#f4f5f7',
-                        color: isSelected ? (subject.titleColor || '#1a2b4a') : '#8a93a2',
-                      }}>
-                      Thème {idx + 1}
-                    </span>
-                    <p className="text-sm font-semibold leading-tight" style={{ color: isSelected ? (subject.titleColor || '#1a2b4a') : '#1a2b4a' }}>
-                      {subject.title}
-                    </p>
-                    <p className="text-xs mt-1" style={{ color: isSelected ? (subject.titleColor || '#8a93a2') : '#8a93a2', opacity: isSelected ? 0.8 : 1 }}>
-                      {sessionsCount} séance{sessionsCount > 1 ? 's' : ''}
-                    </p>
-                  </div>
-                )
-              })
-            )}
-          </div>
-        </div>
-
-        {/* Colonne séances */}
-        <div className="flex-1 min-w-0">
-          <div className="bg-white rounded-2xl p-4" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: '#8a93a2' }}>
-                Séances · {selectedSubject?.title || ''}
-              </p>
-              <button
-                onClick={() => selectedSubjectId && setDrawerState({ mode: 'create-session', subjectId: selectedSubjectId })}
-                disabled={!selectedSubjectId}
-                className="px-3 py-2 rounded-xl text-xs font-semibold text-white"
-                style={{ backgroundColor: '#2BBFB3', opacity: !selectedSubjectId ? 0.5 : 1, cursor: !selectedSubjectId ? 'not-allowed' : 'pointer' }}>
-                + Nouvelle séance
-              </button>
-            </div>
-
-            {selectedSessions.length === 0 ? (
-              <EmptyState
-                icon="🎬"
-                title="Aucune séance"
-                message="Ce thème ne contient aucune séance. Créez la première."
-                actionLabel="+ Créer la première séance"
-                onAction={() => selectedSubjectId && setDrawerState({ mode: 'create-session', subjectId: selectedSubjectId })}
-              />
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {selectedSessions.map((session, idx) => {
-                  const meta = getSessionMeta(session.id)
-                  const badge = statusBadge(session.status)
-                  return (
-                    <div
-                      key={session.id}
-                      onClick={() => setDrawerState({ mode: 'edit-session', data: session })}
-                      className="relative group rounded-xl p-3 cursor-pointer transition-all hover:shadow-md"
-                      style={{ border: '1px solid #f4f5f7', backgroundColor: '#fafbfc' }}>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setSessionToDelete(session) }}
-                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-md"
-                        style={{ backgroundColor: 'rgba(255,255,255,0.9)', color: '#DC2626', fontSize: '12px' }}
-                        title="Supprimer la séance">
-                        🗑️
-                      </button>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>
-                          Séance {idx + 1}
-                        </span>
-                        <span className="text-xs px-2 py-0.5 rounded font-semibold text-white" style={{ backgroundColor: badge.bg }}>
-                          {badge.label}
-                        </span>
-                      </div>
-                      <p className="text-sm font-semibold leading-tight mb-2" style={{ color: '#1a2b4a' }}>
-                        {session.title}
-                      </p>
-                      <p className="text-xs" style={{ color: '#8a93a2' }}>
-                        {meta.cutsCount} cut{meta.cutsCount > 1 ? 's' : ''} · {meta.totalMin} min · {session.type || '—'}
-                      </p>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-      </div>
+      <SubjectBlock blockKey="seances" blockTitle="Séances" subjects={seancesSubjects} {...blockProps} />
+      <SubjectBlock blockKey="meditations" blockTitle="Méditations" subjects={meditationsSubjects} {...blockProps} />
+      <SubjectBlock blockKey="exercices" blockTitle="Exercices" subjects={exercicesSubjects} {...blockProps} />
 
       {/* Drawer */}
       {drawerState && (
@@ -625,6 +556,347 @@ export default function Cocon() {
       )}
 
       {ConfirmDialog}
+    </div>
+  )
+}
+
+// ─── SubjectBlock ─────────────────────────────────
+function SubjectBlock({
+  blockKey, blockTitle, subjects, openSubjectIds, onToggleSubject,
+  videos, sessions, onEditSubject, onCreateSubjectPrefilled,
+  onCreateSession, onEditSession, onDeleteSession,
+}) {
+  if (subjects.length === 0) {
+    return (
+      <div style={{ marginBottom: 28 }}>
+        <BlockHeader title={blockTitle} count={0} />
+        <div style={{
+          background: 'white',
+          borderRadius: 12,
+          border: '0.5px solid #eef0f2',
+          padding: '32px 16px',
+          textAlign: 'center',
+        }}>
+          <p style={{ fontSize: 13, color: '#8a93a2', margin: '0 0 12px 0' }}>
+            Aucun thème dans cette catégorie
+          </p>
+          <button
+            onClick={() => onCreateSubjectPrefilled(blockKey)}
+            style={{
+              background: 'transparent',
+              color: '#2BBFB3',
+              border: '1px solid #2BBFB3',
+              borderRadius: 10,
+              padding: '6px 14px',
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}>
+            + Créer le premier thème
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const openPanels = subjects.filter(s => openSubjectIds.has(s.id))
+
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <BlockHeader title={blockTitle} count={subjects.length} />
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+        gap: 10,
+        marginBottom: openPanels.length > 0 ? 14 : 0,
+      }}>
+        {subjects.map((subject, idx) => (
+          <SubjectCard
+            key={subject.id}
+            subject={subject}
+            displayNumber={idx + 1}
+            isOpen={openSubjectIds.has(subject.id)}
+            sessionCount={sessions.filter(s => s.sessionSubjectId === subject.id).length}
+            onClick={() => onToggleSubject(subject.id)}
+            onEdit={() => onEditSubject(subject)}
+          />
+        ))}
+      </div>
+
+      {openPanels.map((subject) => (
+        <SubjectPanel
+          key={subject.id}
+          subject={subject}
+          displayNumber={subjects.findIndex(s => s.id === subject.id) + 1}
+          blockTitle={blockTitle}
+          sessions={sessions
+            .filter(s => s.sessionSubjectId === subject.id)
+            .sort((a, b) => (a.position || 0) - (b.position || 0) || a.id - b.id)}
+          videos={videos}
+          onCreateSession={() => onCreateSession(subject.id)}
+          onEditSession={onEditSession}
+          onDeleteSession={onDeleteSession}
+        />
+      ))}
+    </div>
+  )
+}
+
+function BlockHeader({ title, count }) {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'baseline',
+      justifyContent: 'space-between',
+      marginBottom: 12,
+    }}>
+      <p style={{ fontSize: 16, fontWeight: 500, color: '#1a2b4a', margin: 0 }}>{title}</p>
+      <p style={{ fontSize: 12, color: '#8a93a2', margin: 0 }}>
+        {count} {count <= 1 ? 'thème' : 'thèmes'}
+      </p>
+    </div>
+  )
+}
+
+// ─── SubjectCard ──────────────────────────────────
+function SubjectCard({ subject, displayNumber, isOpen, sessionCount, onClick, onEdit }) {
+  const accentColor = subject.backgroundColor || '#888780'
+
+  const cardStyle = {
+    background: isOpen ? '#fafbfc' : 'white',
+    borderRadius: 12,
+    padding: '12px 14px',
+    borderLeft: `4px solid ${accentColor}`,
+    borderTop: isOpen ? `1px solid ${accentColor}` : '0.5px solid #eef0f2',
+    borderRight: isOpen ? `1px solid ${accentColor}` : '0.5px solid #eef0f2',
+    borderBottom: isOpen ? `1px solid ${accentColor}` : '0.5px solid #eef0f2',
+    cursor: 'pointer',
+    minHeight: 92,
+    display: 'flex',
+    flexDirection: 'column',
+    position: 'relative',
+    userSelect: 'none',
+  }
+
+  return (
+    <div className="subject-card" style={cardStyle} onClick={onClick}>
+      <p style={{ fontSize: 11, color: '#8a93a2', margin: '0 0 4px 0' }}>
+        Thème {displayNumber}
+      </p>
+      <p style={{
+        fontSize: 13,
+        fontWeight: 500,
+        color: '#1a2b4a',
+        margin: 0,
+        lineHeight: 1.3,
+        flex: 1,
+      }}>
+        {subject.title}
+      </p>
+      <p style={{ fontSize: 11, color: '#8a93a2', margin: '8px 0 0 0' }}>
+        {sessionCount === 0 ? 'aucune séance' : `${sessionCount} ${sessionCount === 1 ? 'séance' : 'séances'}`}
+      </p>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: 8,
+          right: 8,
+          width: 16,
+          height: 16,
+          borderRadius: '50%',
+          background: accentColor,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <svg width="9" height="9" viewBox="0 0 8 8" fill="none">
+            <path d="M2 5l2-2 2 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+      )}
+
+      <button
+        onClick={(e) => { e.stopPropagation(); onEdit() }}
+        style={{
+          position: 'absolute',
+          top: 6,
+          right: isOpen ? 30 : 6,
+          opacity: 0,
+          transition: 'opacity 0.15s',
+          background: 'rgba(255,255,255,0.9)',
+          border: 'none',
+          borderRadius: 4,
+          padding: '2px 4px',
+          cursor: 'pointer',
+          fontSize: 11,
+          color: '#8a93a2',
+        }}
+        className="subject-card-edit"
+        title="Modifier le thème">
+        ✏️
+      </button>
+    </div>
+  )
+}
+
+// ─── SubjectPanel ─────────────────────────────────
+function SubjectPanel({
+  subject, displayNumber, blockTitle, sessions, videos,
+  onCreateSession, onEditSession, onDeleteSession,
+}) {
+  const accentColor = subject.backgroundColor || '#888780'
+
+  return (
+    <div
+      id={`panel-subject-${subject.id}`}
+      style={{
+        background: 'white',
+        borderRadius: 12,
+        border: '0.5px solid #eef0f2',
+        borderTop: `3px solid ${accentColor}`,
+        padding: 16,
+        marginBottom: 14,
+      }}>
+
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 14,
+        gap: 12,
+      }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <p style={{ fontSize: 11, color: '#8a93a2', margin: '0 0 2px 0' }}>
+            Thème {displayNumber} · {blockTitle}
+          </p>
+          <p style={{ fontSize: 14, fontWeight: 500, color: '#1a2b4a', margin: 0 }}>
+            {subject.title}
+          </p>
+        </div>
+        <button
+          onClick={onCreateSession}
+          style={{
+            background: '#2BBFB3',
+            color: 'white',
+            border: 'none',
+            borderRadius: 10,
+            padding: '6px 12px',
+            fontSize: 12,
+            fontWeight: 500,
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}>
+          + Nouvelle séance
+        </button>
+      </div>
+
+      {sessions.length === 0 ? (
+        <p style={{ fontSize: 12, color: '#8a93a2', textAlign: 'center', padding: '16px 0' }}>
+          Aucune séance dans ce thème
+        </p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {sessions.map(session => (
+            <SessionRow
+              key={session.id}
+              session={session}
+              cutsCount={videos.filter(v => v.sessionId === session.id).length}
+              onEdit={() => onEditSession(session)}
+              onDelete={() => onDeleteSession(session)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── SessionRow ───────────────────────────────────
+function SessionRow({ session, cutsCount, onEdit, onDelete }) {
+  const statusConfig = {
+    published: { bg: '#e8f8f7', color: '#2BBFB3', label: 'Published' },
+    review: { bg: '#FAEEDA', color: '#BA7517', label: 'Review' },
+    draft: { bg: '#F1EFE8', color: '#5F5E5A', label: 'Draft' },
+  }
+  const status = statusConfig[session.status] || statusConfig.draft
+
+  const thumbnailUrl = session.thumbNail?.url || null
+
+  return (
+    <div
+      onClick={onEdit}
+      className="session-row"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        background: '#fafbfc',
+        border: '0.5px solid #eef0f2',
+        borderRadius: 10,
+        padding: '10px 12px',
+        cursor: 'pointer',
+        position: 'relative',
+      }}>
+
+      <div style={{
+        width: 84,
+        height: 36,
+        borderRadius: 6,
+        flexShrink: 0,
+        background: thumbnailUrl ? `url(${thumbnailUrl}) center/cover no-repeat` : '#f0f1f3',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        {!thumbnailUrl && (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#b4b8bf" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="9" cy="9" r="2"/>
+            <path d="M21 15l-5-5L5 21"/>
+          </svg>
+        )}
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 13, fontWeight: 500, color: '#1a2b4a', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {session.title}
+        </p>
+        <p style={{ fontSize: 11, color: '#8a93a2', margin: 0 }}>
+          {session.author || 'Auteur inconnu'} · {cutsCount === 0 ? 'aucun cut' : `${cutsCount} ${cutsCount === 1 ? 'cut' : 'cuts'}`}
+        </p>
+      </div>
+
+      <div style={{
+        background: status.bg,
+        color: status.color,
+        padding: '3px 8px',
+        borderRadius: 6,
+        fontSize: 11,
+        fontWeight: 500,
+        flexShrink: 0,
+      }}>
+        {status.label}
+      </div>
+
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete() }}
+        className="session-row-delete"
+        style={{
+          opacity: 0,
+          transition: 'opacity 0.15s',
+          background: 'transparent',
+          border: 'none',
+          padding: 4,
+          cursor: 'pointer',
+          color: '#DC2626',
+          fontSize: 14,
+          flexShrink: 0,
+        }}
+        title="Supprimer la séance">
+        🗑️
+      </button>
     </div>
   )
 }
