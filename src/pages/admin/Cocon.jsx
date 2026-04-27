@@ -7,6 +7,11 @@ const APP_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8'
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
+const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/ogg']
+const MAX_AUDIO_BYTES = 100 * 1024 * 1024
+
+const EXCLUDED_PAYLOAD_KEYS = new Set(['color', 'aiQuestion'])
+
 export default function Cocon() {
   const [subjects, setSubjects] = useState([])
   const [sessions, setSessions] = useState([])
@@ -97,7 +102,6 @@ export default function Cocon() {
         sessionSubjectId: drawerState.subjectId,
         type: parentSubject?.type || 'therapy',
         exerciseType: parentSubject?.exerciseType || '',
-        color: parentSubject?.backgroundColor || '',
         colorTypo: parentSubject?.titleColor || '',
         status: 'draft',
         avlForFree: false,
@@ -123,15 +127,12 @@ export default function Cocon() {
       const newSubject = subjects.find(s => s.id === newSubjectId)
 
       if (oldSubject && newSubject) {
-        const colorsMatchOldTheme =
-          formData.color === oldSubject.backgroundColor &&
-          formData.colorTypo === oldSubject.titleColor
+        const colorsMatchOldTheme = formData.colorTypo === oldSubject.titleColor
 
         if (colorsMatchOldTheme) {
           setFormData(prev => ({
             ...prev,
             sessionSubjectId: newSubjectId,
-            color: newSubject.backgroundColor,
             colorTypo: newSubject.titleColor,
           }))
           setColorChangePrompt(null)
@@ -147,7 +148,6 @@ export default function Cocon() {
   const applyNewThemeColors = () => {
     setFormData(prev => ({
       ...prev,
-      color: colorChangePrompt.newSubject.backgroundColor,
       colorTypo: colorChangePrompt.newSubject.titleColor,
     }))
     setColorChangePrompt(null)
@@ -162,6 +162,37 @@ export default function Cocon() {
     if (isSession && !formData.sessionSubjectId) {
       showToast('Le thème parent est obligatoire', 'error')
       return
+    }
+
+    if (drawerState.mode === 'edit-session') {
+      const original = drawerState.data
+      const typeChanged = formData.type !== original.type
+      const exerciseTypeChanged = formData.exerciseType !== original.exerciseType
+
+      if (typeChanged || exerciseTypeChanged) {
+        if (original.type === 'therapy' && formData.type === 'exercise') {
+          const cutsCount = videos.filter(v => v.sessionId === original.id).length
+          if (cutsCount > 0) {
+            showToast(`Cette séance a ${cutsCount} cut(s) vidéo. Supprimez-les manuellement dans Xano avant de changer le type.`, 'error')
+            return
+          }
+        }
+
+        if (original.type === 'exercise' && formData.type === 'therapy' && original.exerciseSoundtrack) {
+          showToast('Cette séance a un audio. Supprimez-le manuellement dans Xano avant de changer le type.', 'error')
+          return
+        }
+
+        if (
+          original.type === 'exercise' &&
+          original.exerciseType !== 'thinking' &&
+          formData.exerciseType === 'thinking' &&
+          original.exerciseSoundtrack
+        ) {
+          showToast('Cette séance a un audio. Supprimez-le manuellement dans Xano avant de passer en thinking.', 'error')
+          return
+        }
+      }
     }
 
     let endpoint, method, payload, successMsg
@@ -461,6 +492,13 @@ function SubjectForm({ formData, update, inputStyle, showToast }) {
     { key: 'borderColor', label: 'Couleur bordure' },
   ]
 
+  const isTherapy = formData.type === 'therapy'
+  const isExercise = formData.type === 'exercise'
+  const isMeditation = isExercise && formData.exerciseType === 'meditation'
+
+  const showTheme = isTherapy || isMeditation
+  const showExerciseType = isExercise
+
   return (
     <div className="space-y-4">
       <Field label="Titre *">
@@ -483,16 +521,18 @@ function SubjectForm({ formData, update, inputStyle, showToast }) {
         />
       </Field>
 
-      <Field label="Module">
-        <input
-          type="text"
-          value={formData.theme || ''}
-          placeholder="Ex: Thème 1, Phase 2..."
-          onChange={e => update({ theme: e.target.value })}
-          className="w-full px-3 py-2.5 rounded-xl text-sm"
-          style={inputStyle}
-        />
-      </Field>
+      {showTheme && (
+        <Field label="Module">
+          <input
+            type="text"
+            value={formData.theme || ''}
+            placeholder="Ex: Thème 1, Phase 2..."
+            onChange={e => update({ theme: e.target.value })}
+            className="w-full px-3 py-2.5 rounded-xl text-sm"
+            style={inputStyle}
+          />
+        </Field>
+      )}
 
       <div>
         <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Image</p>
@@ -504,7 +544,7 @@ function SubjectForm({ formData, update, inputStyle, showToast }) {
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className={showExerciseType ? 'grid grid-cols-2 gap-3' : ''}>
         <Field label="Type *">
           <select
             value={formData.type || 'therapy'}
@@ -515,20 +555,21 @@ function SubjectForm({ formData, update, inputStyle, showToast }) {
             <option value="exercise">Exercice</option>
           </select>
         </Field>
-        <Field label="Type d'exercice">
-          <select
-            value={formData.exerciseType || ''}
-            onChange={e => update({ exerciseType: e.target.value })}
-            disabled={formData.type !== 'exercise'}
-            className="w-full px-3 py-2.5 rounded-xl text-sm"
-            style={{ ...inputStyle, opacity: formData.type !== 'exercise' ? 0.5 : 1 }}>
-            <option value="">—</option>
-            <option value="meditation">Méditation</option>
-            <option value="breathing">Respiration</option>
-            <option value="visualization">Visualisation</option>
-            <option value="sleep">Sommeil</option>
-          </select>
-        </Field>
+        {showExerciseType && (
+          <Field label="Type d'exercice">
+            <select
+              value={formData.exerciseType || ''}
+              onChange={e => update({ exerciseType: e.target.value })}
+              className="w-full px-3 py-2.5 rounded-xl text-sm"
+              style={inputStyle}>
+              <option value="">—</option>
+              <option value="meditation">Méditation</option>
+              <option value="breathing">Respiration</option>
+              <option value="visualization">Visualisation</option>
+              <option value="sleep">Sommeil</option>
+            </select>
+          </Field>
+        )}
       </div>
 
       <div>
@@ -566,8 +607,31 @@ function SessionForm({
   formData, update, subjects, inputStyle, colorChangePrompt,
   onSubjectChange, onApplyNewThemeColors, onDismissColorPrompt, isCreate, showToast,
 }) {
+  const isTherapy = formData.type === 'therapy'
+  const isExercise = formData.type === 'exercise'
+  const isThinking = isExercise && formData.exerciseType === 'thinking'
+  const isExerciseAudio = isExercise && !isThinking
+
+  const showExerciseType = isExercise
+  const showAiContext = isTherapy || isThinking
+  const showPlayerImage = isExerciseAudio
+  const showAudio = isExerciseAudio
+  const showCutsInfo = isTherapy
+
   return (
     <div className="space-y-4">
+      {showCutsInfo && (
+        <div style={{
+          backgroundColor: '#f4f5f7',
+          color: '#8a93a2',
+          fontSize: '12px',
+          padding: '8px 12px',
+          borderRadius: '6px',
+        }}>
+          Les cuts vidéo de cette séance se gèreront dans la prochaine livraison (L3c).
+        </div>
+      )}
+
       <Field label="Titre *">
         <input
           type="text"
@@ -647,25 +711,47 @@ function SessionForm({
         </Field>
       </div>
 
-      <Field label="Type d'exercice">
+      {showExerciseType && (
+        <Field label="Type d'exercice">
+          <select
+            value={formData.exerciseType || ''}
+            onChange={e => update({ exerciseType: e.target.value })}
+            className="w-full px-3 py-2.5 rounded-xl text-sm"
+            style={inputStyle}>
+            <option value="">—</option>
+            <option value="meditation">Méditation</option>
+            <option value="breathing">Respiration</option>
+            <option value="visualization">Visualisation</option>
+            <option value="sleep">Sommeil</option>
+            <option value="thinking">Thinking</option>
+          </select>
+        </Field>
+      )}
+
+      <Field label="Statut *">
         <select
-          value={formData.exerciseType || ''}
-          onChange={e => update({ exerciseType: e.target.value })}
-          disabled={formData.type !== 'exercise'}
+          value={formData.status || 'draft'}
+          onChange={e => update({ status: e.target.value })}
           className="w-full px-3 py-2.5 rounded-xl text-sm"
-          style={{ ...inputStyle, opacity: formData.type !== 'exercise' ? 0.5 : 1 }}>
-          <option value="">—</option>
-          <option value="meditation">Méditation</option>
-          <option value="breathing">Respiration</option>
-          <option value="visualization">Visualisation</option>
-          <option value="sleep">Sommeil</option>
+          style={inputStyle}>
+          <option value="draft">Draft</option>
+          <option value="review">Review</option>
+          <option value="published">Published</option>
         </select>
       </Field>
+
+      <label className="flex items-center gap-3 px-3 py-3 rounded-xl cursor-pointer" style={{ backgroundColor: '#f4f5f7' }}>
+        <input
+          type="checkbox"
+          checked={formData.avlForFree || false}
+          onChange={e => update({ avlForFree: e.target.checked })}
+        />
+        <span className="text-sm flex-1" style={{ color: '#1a2b4a' }}>Disponible en gratuit</span>
+      </label>
 
       <div>
         <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Couleurs</p>
         <div className="grid grid-cols-2 gap-3">
-          <ColorInput label="Couleur fond" value={formData.color} onChange={v => update({ color: v })} inputStyle={inputStyle} />
           <ColorInput label="Couleur typo" value={formData.colorTypo} onChange={v => update({ colorTypo: v })} inputStyle={inputStyle} />
         </div>
       </div>
@@ -685,27 +771,32 @@ function SessionForm({
             onChange={(file) => update({ thumbNail: file })}
             showToast={showToast}
           />
-          <ImageUpload
-            label="Player Image"
-            value={formData.playerImage}
-            onChange={(file) => update({ playerImage: file })}
-            showToast={showToast}
-          />
+          {showPlayerImage && (
+            <ImageUpload
+              label="Player Image"
+              value={formData.playerImage}
+              onChange={(file) => update({ playerImage: file })}
+              showToast={showToast}
+            />
+          )}
         </div>
       </div>
 
-      <div>
-        <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Chatbot IA</p>
-        <div className="space-y-3">
-          <Field label="Question d'accroche">
-            <textarea
-              value={formData.aiQuestion || ''}
-              onChange={e => update({ aiQuestion: e.target.value })}
-              rows={2}
-              className="w-full px-3 py-2.5 rounded-xl text-sm resize-y"
-              style={inputStyle}
-            />
-          </Field>
+      {showAudio && (
+        <div>
+          <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Audio</p>
+          <AudioUpload
+            label="Audio de la séance"
+            value={formData.exerciseSoundtrack}
+            onChange={(file) => update({ exerciseSoundtrack: file })}
+            showToast={showToast}
+          />
+        </div>
+      )}
+
+      {showAiContext && (
+        <div>
+          <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Chatbot IA</p>
           <Field label="Contexte IA">
             <textarea
               value={formData.aiContext || ''}
@@ -716,28 +807,7 @@ function SessionForm({
             />
           </Field>
         </div>
-      </div>
-
-      <label className="flex items-center gap-3 px-3 py-3 rounded-xl cursor-pointer" style={{ backgroundColor: '#f4f5f7' }}>
-        <input
-          type="checkbox"
-          checked={formData.avlForFree || false}
-          onChange={e => update({ avlForFree: e.target.checked })}
-        />
-        <span className="text-sm flex-1" style={{ color: '#1a2b4a' }}>Disponible en gratuit</span>
-      </label>
-
-      <Field label="Statut *">
-        <select
-          value={formData.status || 'draft'}
-          onChange={e => update({ status: e.target.value })}
-          className="w-full px-3 py-2.5 rounded-xl text-sm"
-          style={inputStyle}>
-          <option value="draft">Draft</option>
-          <option value="review">Review</option>
-          <option value="published">Published</option>
-        </select>
-      </Field>
+      )}
     </div>
   )
 }
@@ -842,10 +912,93 @@ function ImageUpload({ label, value, onChange, showToast }) {
   )
 }
 
+// ─── AudioUpload ──────────────────────────────────
+function AudioUpload({ label, value, onChange, showToast }) {
+  const inputRef = useRef(null)
+  const [objectUrl, setObjectUrl] = useState(null)
+
+  useEffect(() => {
+    if (value instanceof File) {
+      const url = URL.createObjectURL(value)
+      setObjectUrl(url)
+      return () => URL.revokeObjectURL(url)
+    }
+    setObjectUrl(null)
+  }, [value])
+
+  const audioUrl = objectUrl || (value && typeof value === 'object' && value.url) || null
+  const isNewFile = value instanceof File
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!ALLOWED_AUDIO_TYPES.includes(file.type)) {
+      showToast('Format invalide, audio mp3/m4a/wav/ogg uniquement', 'error')
+      return
+    }
+    if (file.size > MAX_AUDIO_BYTES) {
+      showToast('Taille max 100 Mo', 'error')
+      return
+    }
+    onChange(file)
+  }
+
+  const openPicker = () => inputRef.current?.click()
+
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1" style={{ color: '#8a93a2' }}>{label}</label>
+      {audioUrl ? (
+        <div className="space-y-2">
+          <audio controls src={audioUrl} className="w-full" />
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            {isNewFile && (
+              <span className="text-xs" style={{ color: '#BA7517' }}>
+                Nouveau fichier — sauvegardez pour confirmer
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={openPicker}
+              className="ml-auto px-3 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a', border: '1px solid #eef0f2' }}>
+              Remplacer l'audio
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={openPicker}
+          className="w-full px-4 py-6 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors"
+          style={{
+            backgroundColor: '#f4f5f7',
+            border: '2px dashed #d4d8df',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#eef0f2' }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#f4f5f7' }}
+          title="Ajouter un audio">
+          <span className="text-2xl leading-none" style={{ color: '#8a93a2' }}>♪</span>
+          <span className="text-xs" style={{ color: '#8a93a2' }}>Ajouter un audio</span>
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/ogg"
+        onChange={handleFile}
+        hidden
+      />
+    </div>
+  )
+}
+
 // ─── FormData builder ─────────────────────────────
 function buildFormData(payload) {
   const fd = new FormData()
   for (const [key, value] of Object.entries(payload)) {
+    if (EXCLUDED_PAYLOAD_KEYS.has(key)) continue
     if (value === undefined || value === null) continue
     if (value instanceof File) {
       fd.append(key, value)
