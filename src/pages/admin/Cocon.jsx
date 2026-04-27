@@ -664,23 +664,34 @@ function SubjectCard({ subject, displayNumber, isOpen, sessionCount, onClick, on
   const accentColor = subject.backgroundColor || '#888780'
 
   const cardStyle = {
-    background: isOpen ? '#fafbfc' : 'white',
+    background: isOpen ? hexToRgba(accentColor, 0.18) : 'white',
     borderRadius: 12,
-    padding: '12px 14px',
-    borderLeft: `4px solid ${accentColor}`,
-    borderTop: isOpen ? `1px solid ${accentColor}` : '0.5px solid #eef0f2',
-    borderRight: isOpen ? `1px solid ${accentColor}` : '0.5px solid #eef0f2',
-    borderBottom: isOpen ? `1px solid ${accentColor}` : '0.5px solid #eef0f2',
+    padding: '12px 14px 12px 18px',
+    border: isOpen
+      ? `1.5px solid ${accentColor}`
+      : '0.5px solid #eef0f2',
     cursor: 'pointer',
     minHeight: 92,
     display: 'flex',
     flexDirection: 'column',
     position: 'relative',
+    transition: 'all 0.15s ease-out',
     userSelect: 'none',
+    overflow: 'hidden',
   }
 
   return (
     <div className="subject-card" style={cardStyle} onClick={onClick}>
+
+      <div style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        bottom: 0,
+        width: 5,
+        background: accentColor,
+      }} />
+
       <p style={{ fontSize: 11, color: '#8a93a2', margin: '0 0 4px 0' }}>
         Thème {displayNumber}
       </p>
@@ -1457,6 +1468,67 @@ function ColorInput({ label, value, onChange, inputStyle }) {
   )
 }
 
+// ─── useFileDrop hook ─────────────────────────────
+function useFileDrop(onFileDropped) {
+  const [isDragOver, setIsDragOver] = useState(false)
+  const dragCountRef = useRef(0)
+
+  const onDragEnter = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCountRef.current++
+    if (e.dataTransfer?.types?.includes('Files')) {
+      setIsDragOver(true)
+    }
+  }
+
+  const onDragOver = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+  }
+
+  const onDragLeave = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCountRef.current--
+    if (dragCountRef.current <= 0) {
+      dragCountRef.current = 0
+      setIsDragOver(false)
+    }
+  }
+
+  const onDrop = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCountRef.current = 0
+    setIsDragOver(false)
+    const file = e.dataTransfer?.files?.[0]
+    if (file) onFileDropped(file)
+  }
+
+  return {
+    isDragOver,
+    dragHandlers: { onDragEnter, onDragOver, onDragLeave, onDrop },
+  }
+}
+
+// ─── hexToRgba helper ─────────────────────────────
+function hexToRgba(hex, alpha = 1) {
+  if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) {
+    return `rgba(136, 135, 128, ${alpha})`
+  }
+  const cleanHex = hex.length === 4
+    ? hex.slice(1).split('').map(c => c + c).join('')
+    : hex.slice(1)
+  if (cleanHex.length !== 6) return `rgba(136, 135, 128, ${alpha})`
+  const r = parseInt(cleanHex.slice(0, 2), 16)
+  const g = parseInt(cleanHex.slice(2, 4), 16)
+  const b = parseInt(cleanHex.slice(4, 6), 16)
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return `rgba(136, 135, 128, ${alpha})`
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 // ─── ImageUpload ──────────────────────────────────
 function ImageUpload({ label, value, onChange, showToast, aspectRatio = '1 / 1', maxWidth = '120px' }) {
   const inputRef = useRef(null)
@@ -1473,10 +1545,7 @@ function ImageUpload({ label, value, onChange, showToast, aspectRatio = '1 / 1',
 
   const previewUrl = objectUrl || (value && typeof value === 'object' && value.url) || null
 
-  const handleFile = (e) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
+  const validateAndSetFile = (file) => {
     if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
       showToast('Format invalide (JPEG, PNG ou WebP attendu)', 'error')
       return
@@ -1488,6 +1557,14 @@ function ImageUpload({ label, value, onChange, showToast, aspectRatio = '1 / 1',
     onChange(file)
   }
 
+  const handleFile = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (file) validateAndSetFile(file)
+  }
+
+  const { isDragOver, dragHandlers } = useFileDrop(validateAndSetFile)
+
   const openPicker = () => inputRef.current?.click()
 
   return (
@@ -1496,16 +1573,19 @@ function ImageUpload({ label, value, onChange, showToast, aspectRatio = '1 / 1',
       <button
         type="button"
         onClick={openPicker}
+        {...dragHandlers}
         className="w-full rounded-xl flex items-center justify-center overflow-hidden transition-colors"
         style={{
-          backgroundColor: '#f4f5f7',
-          border: previewUrl ? '1px solid #eef0f2' : '2px dashed #d4d8df',
+          backgroundColor: isDragOver ? '#e8f8f7' : '#f4f5f7',
+          border: isDragOver
+            ? '2px solid #2BBFB3'
+            : (previewUrl ? '1px solid #eef0f2' : '2px dashed #d4d8df'),
           maxWidth: maxWidth,
           aspectRatio: aspectRatio,
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#eef0f2' }}
-        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#f4f5f7' }}
-        title={previewUrl ? 'Cliquer pour remplacer' : 'Ajouter une image'}>
+        onMouseEnter={(e) => { if (!isDragOver) e.currentTarget.style.backgroundColor = '#eef0f2' }}
+        onMouseLeave={(e) => { if (!isDragOver) e.currentTarget.style.backgroundColor = '#f4f5f7' }}
+        title={previewUrl ? 'Cliquer ou glisser pour remplacer' : 'Ajouter une image'}>
         {previewUrl ? (
           <img src={previewUrl} alt={label} className="w-full h-full object-cover" />
         ) : (
@@ -1543,10 +1623,7 @@ function AudioUpload({ label, value, onChange, showToast }) {
   const audioUrl = objectUrl || (value && typeof value === 'object' && value.url) || null
   const isNewFile = value instanceof File
 
-  const handleFile = (e) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
+  const validateAndSetFile = (file) => {
     if (!ALLOWED_AUDIO_TYPES.includes(file.type)) {
       showToast('Format invalide, audio mp3/m4a/wav/ogg uniquement', 'error')
       return
@@ -1558,13 +1635,27 @@ function AudioUpload({ label, value, onChange, showToast }) {
     onChange(file)
   }
 
+  const handleFile = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (file) validateAndSetFile(file)
+  }
+
+  const { isDragOver, dragHandlers } = useFileDrop(validateAndSetFile)
+
   const openPicker = () => inputRef.current?.click()
 
   return (
-    <div>
+    <div {...dragHandlers} style={{ position: 'relative' }}>
       <label className="block text-xs font-medium mb-1" style={{ color: '#8a93a2' }}>{label}</label>
       {audioUrl ? (
-        <div className="space-y-2">
+        <div className="space-y-2" style={{
+          padding: isDragOver ? '8px' : '0',
+          border: isDragOver ? '2px solid #2BBFB3' : 'none',
+          borderRadius: isDragOver ? '12px' : '0',
+          backgroundColor: isDragOver ? '#e8f8f7' : 'transparent',
+          transition: 'background-color 0.15s',
+        }}>
           <audio controls src={audioUrl} className="w-full" />
           <div className="flex items-center justify-between gap-2 flex-wrap">
             {isNewFile && (
@@ -1577,7 +1668,7 @@ function AudioUpload({ label, value, onChange, showToast }) {
               onClick={openPicker}
               className="ml-auto px-3 py-1.5 rounded-lg text-xs font-semibold"
               style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a', border: '1px solid #eef0f2' }}>
-              Remplacer l'audio
+              {isDragOver ? 'Relâchez pour remplacer' : "Remplacer l'audio"}
             </button>
           </div>
         </div>
@@ -1587,14 +1678,16 @@ function AudioUpload({ label, value, onChange, showToast }) {
           onClick={openPicker}
           className="w-full px-4 py-6 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors"
           style={{
-            backgroundColor: '#f4f5f7',
-            border: '2px dashed #d4d8df',
+            backgroundColor: isDragOver ? '#e8f8f7' : '#f4f5f7',
+            border: isDragOver ? '2px solid #2BBFB3' : '2px dashed #d4d8df',
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#eef0f2' }}
-          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#f4f5f7' }}
-          title="Ajouter un audio">
+          onMouseEnter={(e) => { if (!isDragOver) e.currentTarget.style.backgroundColor = '#eef0f2' }}
+          onMouseLeave={(e) => { if (!isDragOver) e.currentTarget.style.backgroundColor = '#f4f5f7' }}
+          title="Cliquer ou glisser pour ajouter un audio">
           <span className="text-2xl leading-none" style={{ color: '#8a93a2' }}>♪</span>
-          <span className="text-xs" style={{ color: '#8a93a2' }}>Ajouter un audio</span>
+          <span className="text-xs" style={{ color: '#8a93a2' }}>
+            {isDragOver ? 'Relâchez pour ajouter' : 'Ajouter un audio'}
+          </span>
         </button>
       )}
       <input
@@ -1625,10 +1718,7 @@ function VideoUpload({ label, value, onChange, showToast }) {
   const videoUrl = objectUrl || (value && typeof value === 'object' && value.url) || null
   const isNewFile = value instanceof File
 
-  const handleFile = (e) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
+  const validateAndSetFile = (file) => {
     if (!ALLOWED_VIDEO_TYPES.includes(file.type)) {
       showToast('Format invalide, vidéo mp4/mov uniquement', 'error')
       return
@@ -1640,13 +1730,27 @@ function VideoUpload({ label, value, onChange, showToast }) {
     onChange(file)
   }
 
+  const handleFile = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (file) validateAndSetFile(file)
+  }
+
+  const { isDragOver, dragHandlers } = useFileDrop(validateAndSetFile)
+
   const openPicker = () => inputRef.current?.click()
 
   return (
-    <div>
+    <div {...dragHandlers} style={{ position: 'relative' }}>
       <label className="block text-xs font-medium mb-1" style={{ color: '#8a93a2' }}>{label}</label>
       {videoUrl ? (
-        <div className="space-y-2">
+        <div className="space-y-2" style={{
+          padding: isDragOver ? '8px' : '0',
+          border: isDragOver ? '2px solid #2BBFB3' : 'none',
+          borderRadius: isDragOver ? '12px' : '0',
+          backgroundColor: isDragOver ? '#e8f8f7' : 'transparent',
+          transition: 'background-color 0.15s',
+        }}>
           <video controls src={videoUrl} className="w-full max-h-[300px] rounded-lg" style={{ backgroundColor: '#000' }} />
           <div className="flex items-center justify-between gap-2 flex-wrap">
             {isNewFile && (
@@ -1659,7 +1763,7 @@ function VideoUpload({ label, value, onChange, showToast }) {
               onClick={openPicker}
               className="ml-auto px-3 py-1.5 rounded-lg text-xs font-semibold"
               style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a', border: '1px solid #eef0f2' }}>
-              Remplacer la vidéo
+              {isDragOver ? 'Relâchez pour remplacer' : 'Remplacer la vidéo'}
             </button>
           </div>
         </div>
@@ -1669,14 +1773,16 @@ function VideoUpload({ label, value, onChange, showToast }) {
           onClick={openPicker}
           className="w-full px-4 py-6 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors"
           style={{
-            backgroundColor: '#f4f5f7',
-            border: '2px dashed #d4d8df',
+            backgroundColor: isDragOver ? '#e8f8f7' : '#f4f5f7',
+            border: isDragOver ? '2px solid #2BBFB3' : '2px dashed #d4d8df',
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#eef0f2' }}
-          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#f4f5f7' }}
-          title="Ajouter une vidéo">
+          onMouseEnter={(e) => { if (!isDragOver) e.currentTarget.style.backgroundColor = '#eef0f2' }}
+          onMouseLeave={(e) => { if (!isDragOver) e.currentTarget.style.backgroundColor = '#f4f5f7' }}
+          title="Cliquer ou glisser pour ajouter une vidéo">
           <span className="text-2xl leading-none" style={{ color: '#8a93a2' }}>▶</span>
-          <span className="text-xs" style={{ color: '#8a93a2' }}>Ajouter une vidéo</span>
+          <span className="text-xs" style={{ color: '#8a93a2' }}>
+            {isDragOver ? 'Relâchez pour ajouter' : 'Ajouter une vidéo'}
+          </span>
         </button>
       )}
       <input
