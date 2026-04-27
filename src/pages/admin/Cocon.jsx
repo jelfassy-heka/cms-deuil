@@ -10,6 +10,9 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/ogg']
 const MAX_AUDIO_BYTES = 100 * 1024 * 1024
 
+const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime']
+const MAX_VIDEO_BYTES = 200 * 1024 * 1024
+
 const EXCLUDED_PAYLOAD_KEYS = new Set(['color', 'aiQuestion'])
 
 export default function Cocon() {
@@ -22,6 +25,7 @@ export default function Cocon() {
   const [formData, setFormData] = useState({})
   const [saving, setSaving] = useState(false)
   const [colorChangePrompt, setColorChangePrompt] = useState(null)
+  const [cutToDelete, setCutToDelete] = useState(null)
   const { toast, clearToast, showToast } = useToast()
 
   const fetchAll = useCallback(async () => {
@@ -86,10 +90,18 @@ export default function Cocon() {
   }
 
   // ─── Drawer lifecycle ────────────────────────────
+  const lastInitializedDrawerRef = useRef(null)
   useEffect(() => {
     setColorChangePrompt(null)
     if (!drawerState) {
+      lastInitializedDrawerRef.current = null
       setFormData({})
+      return
+    }
+    if (lastInitializedDrawerRef.current === drawerState) return
+    lastInitializedDrawerRef.current = drawerState
+    if (drawerState._restoredFormData) {
+      setFormData(drawerState._restoredFormData)
       return
     }
     if (drawerState.mode === 'create-subject') {
@@ -108,16 +120,94 @@ export default function Cocon() {
       })
     } else if (drawerState.mode === 'edit-session') {
       setFormData({ ...drawerState.data })
+    } else if (drawerState.mode === 'create-cut') {
+      const existingCuts = videos.filter(v => v.sessionId === drawerState.parentSession.id)
+      const newPosition = existingCuts.length > 0
+        ? Math.max(...existingCuts.map(c => c.position)) + 1
+        : 1
+      setFormData({
+        sessionId: drawerState.parentSession.id,
+        position: newPosition,
+      })
+    } else if (drawerState.mode === 'edit-cut') {
+      setFormData({ ...drawerState.data })
     }
-  }, [drawerState, subjects])
+  }, [drawerState, subjects, videos])
 
-  // Escape closes drawer
+  const isCutMode = drawerState?.mode === 'create-cut' || drawerState?.mode === 'edit-cut'
+
+  const closeCutDrawer = useCallback(async () => {
+    if (!drawerState) return
+    const { parentSessionMode, parentSession, parentSessionFormData } = drawerState
+    await fetchAll()
+    setDrawerState({
+      mode: parentSessionMode,
+      data: parentSession,
+      _restoredFormData: parentSessionFormData,
+    })
+  }, [drawerState, fetchAll])
+
+  const handleCloseDrawer = useCallback(() => {
+    if (isCutMode) {
+      closeCutDrawer()
+    } else {
+      setDrawerState(null)
+    }
+  }, [isCutMode, closeCutDrawer])
+
+  // Escape closes drawer (returns to session if in cut mode)
   useEffect(() => {
     if (!drawerState) return
-    const onKey = (e) => { if (e.key === 'Escape') setDrawerState(null) }
+    const onKey = (e) => { if (e.key === 'Escape') handleCloseDrawer() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [drawerState])
+  }, [drawerState, handleCloseDrawer])
+
+  const openCutDrawer = (mode, cut = null) => {
+    if (!drawerState) return
+    setDrawerState({
+      mode: mode === 'create' ? 'create-cut' : 'edit-cut',
+      data: cut,
+      parentSession: drawerState.data,
+      parentSessionFormData: { ...formData },
+      parentSessionMode: drawerState.mode,
+    })
+  }
+
+  const handleMoveCut = async (cut, direction) => {
+    const sortedCuts = videos
+      .filter(v => v.sessionId === cut.sessionId)
+      .sort((a, b) => a.position - b.position)
+    const idx = sortedCuts.findIndex(c => c.id === cut.id)
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (swapIdx < 0 || swapIdx >= sortedCuts.length) return
+    const swapCut = sortedCuts[swapIdx]
+    try {
+      await xanoApp.patch('admin-cut-update', { id: cut.id, position: swapCut.position })
+      await xanoApp.patch('admin-cut-update', { id: swapCut.id, position: cut.position })
+      await fetchAll()
+    } catch (err) {
+      showToast('Erreur lors du réordonnancement: ' + err.message, 'error')
+    }
+  }
+
+  const handleDeleteCut = async (cut) => {
+    try {
+      await xanoApp.post('admin-cut-delete', { id: cut.id })
+      const cutsToDecrement = videos
+        .filter(v => v.sessionId === cut.sessionId && v.position > cut.position)
+        .sort((a, b) => a.position - b.position)
+      for (const c of cutsToDecrement) {
+        await xanoApp.patch('admin-cut-update', { id: c.id, position: c.position - 1 })
+      }
+      await fetchAll()
+      showToast('Cut supprimé', 'success')
+      setCutToDelete(null)
+    } catch (err) {
+      showToast('Erreur lors de la suppression: ' + err.message, 'error')
+      setCutToDelete(null)
+    }
+  }
 
   const handleSubjectChange = (newSubjectId) => {
     const oldSubjectId = formData.sessionSubjectId
@@ -154,6 +244,49 @@ export default function Cocon() {
   }
 
   const handleSave = async () => {
+    if (drawerState.mode === 'create-cut' || drawerState.mode === 'edit-cut') {
+      if (drawerState.mode === 'create-cut' && !(formData.video instanceof File)) {
+        showToast('Une vidéo est obligatoire pour créer un cut', 'error')
+        return
+      }
+      const fd = new FormData()
+      if (drawerState.mode === 'create-cut') {
+        fd.append('video', formData.video)
+        fd.append('sessionId', String(formData.sessionId))
+        fd.append('position', String(formData.position))
+      } else {
+        fd.append('id', String(formData.id))
+        if (formData.video instanceof File) fd.append('video', formData.video)
+      }
+      if (formData.durationMin != null && formData.durationMin !== '') {
+        fd.append('durationMin', String(formData.durationMin))
+      }
+      if (formData.aiQuestion) fd.append('aiQuestion', formData.aiQuestion)
+      if (formData.videoScript) fd.append('videoScript', formData.videoScript)
+      if (formData.aiContext) fd.append('aiContext', formData.aiContext)
+
+      const endpoint = drawerState.mode === 'create-cut' ? 'admin-cut-create' : 'admin-cut-update'
+      const method = drawerState.mode === 'create-cut' ? 'POST' : 'PATCH'
+
+      setSaving(true)
+      try {
+        const res = await fetch(`${APP_BASE}/${endpoint}`, { method, body: fd })
+        if (!res.ok) {
+          const text = await res.text().catch(() => '')
+          throw new Error(`${res.status} ${res.statusText}${text ? ' — ' + text : ''}`)
+        }
+        await closeCutDrawer()
+      } catch (err) {
+        const msg = drawerState.mode === 'create-cut'
+          ? 'Erreur lors de la création du cut: '
+          : 'Erreur lors de la modification du cut: '
+        showToast(msg + err.message, 'error')
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
+
     if (!formData.title?.trim()) {
       showToast('Le titre est obligatoire', 'error')
       return
@@ -380,14 +513,27 @@ export default function Cocon() {
           formData={formData}
           setFormData={setFormData}
           subjects={sortedSubjects}
+          videos={videos}
           saving={saving}
           colorChangePrompt={colorChangePrompt}
-          onClose={() => setDrawerState(null)}
+          onClose={handleCloseDrawer}
           onSave={handleSave}
           onSubjectChange={handleSubjectChange}
           onApplyNewThemeColors={applyNewThemeColors}
           onDismissColorPrompt={() => setColorChangePrompt(null)}
           showToast={showToast}
+          onOpenCutDrawer={openCutDrawer}
+          onMoveCut={handleMoveCut}
+          onRequestDeleteCut={setCutToDelete}
+        />
+      )}
+
+      {/* Delete cut confirmation modal */}
+      {cutToDelete && (
+        <DeleteCutModal
+          cut={cutToDelete}
+          onCancel={() => setCutToDelete(null)}
+          onConfirm={() => handleDeleteCut(cutToDelete)}
         />
       )}
     </div>
@@ -396,10 +542,12 @@ export default function Cocon() {
 
 // ─── Drawer ────────────────────────────────────────
 function Drawer({
-  drawerState, formData, setFormData, subjects, saving, colorChangePrompt,
+  drawerState, formData, setFormData, subjects, videos, saving, colorChangePrompt,
   onClose, onSave, onSubjectChange, onApplyNewThemeColors, onDismissColorPrompt, showToast,
+  onOpenCutDrawer, onMoveCut, onRequestDeleteCut,
 }) {
   const isSubject = drawerState.mode === 'create-subject' || drawerState.mode === 'edit-subject'
+  const isCut = drawerState.mode === 'create-cut' || drawerState.mode === 'edit-cut'
   const isCreate = drawerState.mode.startsWith('create-')
 
   let breadcrumb, drawerTitle
@@ -413,10 +561,18 @@ function Drawer({
     const parent = subjects.find(s => s.id === drawerState.subjectId)
     breadcrumb = `Cocon · ${parent?.title || ''} · Séances`
     drawerTitle = 'Nouvelle séance'
-  } else {
+  } else if (drawerState.mode === 'edit-session') {
     const parent = subjects.find(s => s.id === drawerState.data.sessionSubjectId)
     breadcrumb = `Cocon · ${parent?.title || ''} · Séances`
     drawerTitle = 'Modifier la séance'
+  } else {
+    // Cut modes
+    const parentSession = drawerState.parentSession
+    const parentSubject = subjects.find(s => s.id === parentSession?.sessionSubjectId)
+    breadcrumb = `Cocon · ${parentSubject?.title || ''} · ${parentSession?.title || ''} · Cuts`
+    drawerTitle = drawerState.mode === 'create-cut'
+      ? 'Nouveau cut'
+      : `Cut #${formData.position || ''}`
   }
 
   const update = (patch) => setFormData({ ...formData, ...patch })
@@ -445,13 +601,22 @@ function Drawer({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          {isSubject ? (
+          {isCut ? (
+            <CutForm
+              formData={formData}
+              update={update}
+              inputStyle={inputStyle}
+              showToast={showToast}
+              isCreate={drawerState.mode === 'create-cut'}
+            />
+          ) : isSubject ? (
             <SubjectForm formData={formData} update={update} inputStyle={inputStyle} showToast={showToast} />
           ) : (
             <SessionForm
               formData={formData}
               update={update}
               subjects={subjects}
+              videos={videos}
               inputStyle={inputStyle}
               colorChangePrompt={colorChangePrompt}
               onSubjectChange={onSubjectChange}
@@ -459,6 +624,9 @@ function Drawer({
               onDismissColorPrompt={onDismissColorPrompt}
               isCreate={isCreate}
               showToast={showToast}
+              onOpenCutDrawer={onOpenCutDrawer}
+              onMoveCut={onMoveCut}
+              onRequestDeleteCut={onRequestDeleteCut}
             />
           )}
         </div>
@@ -604,8 +772,9 @@ function SubjectForm({ formData, update, inputStyle, showToast }) {
 
 // ─── SessionForm ──────────────────────────────────
 function SessionForm({
-  formData, update, subjects, inputStyle, colorChangePrompt,
+  formData, update, subjects, videos, inputStyle, colorChangePrompt,
   onSubjectChange, onApplyNewThemeColors, onDismissColorPrompt, isCreate, showToast,
+  onOpenCutDrawer, onMoveCut, onRequestDeleteCut,
 }) {
   const isTherapy = formData.type === 'therapy'
   const isExercise = formData.type === 'exercise'
@@ -616,22 +785,14 @@ function SessionForm({
   const showAiContext = isTherapy || isThinking
   const showPlayerImage = isExerciseAudio
   const showAudio = isExerciseAudio
-  const showCutsInfo = isTherapy
+
+  const sessionCuts = formData.id
+    ? videos.filter(v => v.sessionId === formData.id).sort((a, b) => a.position - b.position)
+    : []
+  const canAddCut = !!formData.id && sessionCuts.length < 4
 
   return (
     <div className="space-y-4">
-      {showCutsInfo && (
-        <div style={{
-          backgroundColor: '#f4f5f7',
-          color: '#8a93a2',
-          fontSize: '12px',
-          padding: '8px 12px',
-          borderRadius: '6px',
-        }}>
-          Les cuts vidéo de cette séance se gèreront dans la prochaine livraison (L3c).
-        </div>
-      )}
-
       <Field label="Titre *">
         <input
           type="text"
@@ -791,6 +952,52 @@ function SessionForm({
             onChange={(file) => update({ exerciseSoundtrack: file })}
             showToast={showToast}
           />
+        </div>
+      )}
+
+      {isTherapy && (
+        <div>
+          <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>
+            Cuts vidéo ({sessionCuts.length}/4)
+          </p>
+          <div className="space-y-2">
+            {sessionCuts.length === 0 ? (
+              <p className="text-sm" style={{ color: '#8a93a2' }}>
+                Aucun cut pour le moment
+              </p>
+            ) : (
+              sessionCuts.map((cut, idx) => (
+                <CutListItem
+                  key={cut.id}
+                  cut={cut}
+                  position={idx + 1}
+                  isFirst={idx === 0}
+                  isLast={idx === sessionCuts.length - 1}
+                  onMoveUp={() => onMoveCut(cut, 'up')}
+                  onMoveDown={() => onMoveCut(cut, 'down')}
+                  onEdit={() => onOpenCutDrawer('edit', cut)}
+                  onDelete={() => onRequestDeleteCut(cut)}
+                />
+              ))
+            )}
+          </div>
+          {!formData.id && (
+            <p className="text-xs mt-2" style={{ color: '#8a93a2' }}>
+              Sauvegardez d'abord la séance pour pouvoir ajouter des cuts.
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => onOpenCutDrawer('create')}
+            disabled={!canAddCut}
+            className="mt-3 w-full px-3 py-2 rounded-lg text-sm font-semibold"
+            style={{
+              backgroundColor: canAddCut ? '#2BBFB3' : '#f4f5f7',
+              color: canAddCut ? 'white' : '#8a93a2',
+              cursor: canAddCut ? 'pointer' : 'not-allowed',
+            }}>
+            + Ajouter un cut
+          </button>
         </div>
       )}
 
@@ -991,6 +1198,222 @@ function AudioUpload({ label, value, onChange, showToast }) {
         hidden
       />
     </div>
+  )
+}
+
+// ─── VideoUpload ──────────────────────────────────
+function VideoUpload({ label, value, onChange, showToast }) {
+  const inputRef = useRef(null)
+  const [objectUrl, setObjectUrl] = useState(null)
+
+  useEffect(() => {
+    if (value instanceof File) {
+      const url = URL.createObjectURL(value)
+      setObjectUrl(url)
+      return () => URL.revokeObjectURL(url)
+    }
+    setObjectUrl(null)
+  }, [value])
+
+  const videoUrl = objectUrl || (value && typeof value === 'object' && value.url) || null
+  const isNewFile = value instanceof File
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!ALLOWED_VIDEO_TYPES.includes(file.type)) {
+      showToast('Format invalide, vidéo mp4/mov uniquement', 'error')
+      return
+    }
+    if (file.size > MAX_VIDEO_BYTES) {
+      showToast('Taille max 200 Mo', 'error')
+      return
+    }
+    onChange(file)
+  }
+
+  const openPicker = () => inputRef.current?.click()
+
+  return (
+    <div>
+      <label className="block text-xs font-medium mb-1" style={{ color: '#8a93a2' }}>{label}</label>
+      {videoUrl ? (
+        <div className="space-y-2">
+          <video controls src={videoUrl} className="w-full max-h-[300px] rounded-lg" style={{ backgroundColor: '#000' }} />
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            {isNewFile && (
+              <span className="text-xs" style={{ color: '#BA7517' }}>
+                Nouveau fichier — sauvegardez pour confirmer
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={openPicker}
+              className="ml-auto px-3 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a', border: '1px solid #eef0f2' }}>
+              Remplacer la vidéo
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={openPicker}
+          className="w-full px-4 py-6 rounded-xl flex flex-col items-center justify-center gap-1 transition-colors"
+          style={{
+            backgroundColor: '#f4f5f7',
+            border: '2px dashed #d4d8df',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#eef0f2' }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#f4f5f7' }}
+          title="Ajouter une vidéo">
+          <span className="text-2xl leading-none" style={{ color: '#8a93a2' }}>▶</span>
+          <span className="text-xs" style={{ color: '#8a93a2' }}>Ajouter une vidéo</span>
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="video/mp4,video/quicktime"
+        onChange={handleFile}
+        hidden
+      />
+    </div>
+  )
+}
+
+// ─── CutListItem ──────────────────────────────────
+function CutListItem({ cut, position, isFirst, isLast, onMoveUp, onMoveDown, onEdit, onDelete }) {
+  const fileName = cut.video?.name || 'Sans nom'
+  const duration = cut.durationMin ? `${cut.durationMin} min` : '—'
+
+  const btnStyle = (disabled) => ({
+    width: '28px',
+    height: '28px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '6px',
+    backgroundColor: 'white',
+    border: '1px solid #eef0f2',
+    color: disabled ? '#d4d8df' : '#1a2b4a',
+    fontSize: '13px',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  })
+
+  return (
+    <div
+      className="flex items-center gap-2 px-3 py-2 rounded-lg"
+      style={{ backgroundColor: '#f4f5f7' }}>
+      <span className="text-xs font-bold flex-shrink-0" style={{ color: '#1a2b4a', minWidth: '24px' }}>
+        #{position}
+      </span>
+      <span
+        className="text-sm flex-1 truncate"
+        style={{ color: '#1a2b4a' }}
+        title={fileName}>
+        {fileName}
+      </span>
+      <span className="text-xs flex-shrink-0" style={{ color: '#8a93a2' }}>{duration}</span>
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <button type="button" onClick={onMoveUp} disabled={isFirst} style={btnStyle(isFirst)} title="Monter">↑</button>
+        <button type="button" onClick={onMoveDown} disabled={isLast} style={btnStyle(isLast)} title="Descendre">↓</button>
+        <button type="button" onClick={onEdit} style={btnStyle(false)} title="Modifier">✏️</button>
+        <button type="button" onClick={onDelete} style={btnStyle(false)} title="Supprimer">🗑️</button>
+      </div>
+    </div>
+  )
+}
+
+// ─── CutForm ──────────────────────────────────────
+function CutForm({ formData, update, inputStyle, showToast }) {
+  return (
+    <div className="space-y-4">
+      <VideoUpload
+        label="Vidéo *"
+        value={formData.video}
+        onChange={(file) => update({ video: file })}
+        showToast={showToast}
+      />
+
+      <Field label="Durée (minutes)">
+        <input
+          type="number"
+          step="0.5"
+          min="0"
+          value={formData.durationMin ?? ''}
+          onChange={e => update({ durationMin: e.target.value === '' ? '' : parseFloat(e.target.value) })}
+          className="w-full px-3 py-2.5 rounded-xl text-sm"
+          style={inputStyle}
+        />
+      </Field>
+
+      <Field label="Question d'accroche IA">
+        <textarea
+          value={formData.aiQuestion || ''}
+          onChange={e => update({ aiQuestion: e.target.value })}
+          rows={2}
+          className="w-full px-3 py-2.5 rounded-xl text-sm resize-y"
+          style={inputStyle}
+        />
+      </Field>
+
+      <Field label="Script vidéo">
+        <textarea
+          value={formData.videoScript || ''}
+          onChange={e => update({ videoScript: e.target.value })}
+          rows={4}
+          className="w-full px-3 py-2.5 rounded-xl text-sm resize-y"
+          style={inputStyle}
+        />
+      </Field>
+
+      <Field label="Contexte IA">
+        <textarea
+          value={formData.aiContext || ''}
+          onChange={e => update({ aiContext: e.target.value })}
+          rows={4}
+          className="w-full px-3 py-2.5 rounded-xl text-sm resize-y"
+          style={inputStyle}
+        />
+      </Field>
+    </div>
+  )
+}
+
+// ─── DeleteCutModal ───────────────────────────────
+function DeleteCutModal({ onCancel, onConfirm }) {
+  return (
+    <>
+      <div
+        onClick={onCancel}
+        className="fixed inset-0 z-[60]"
+        style={{ backgroundColor: 'rgba(26, 43, 74, 0.5)' }}
+      />
+      <div
+        className="fixed left-1/2 top-1/2 z-[70] bg-white rounded-2xl p-5 w-[90%] max-w-md"
+        style={{ transform: 'translate(-50%, -50%)', boxShadow: '0 16px 48px rgba(0,0,0,0.18)' }}>
+        <p className="text-base font-semibold mb-2" style={{ color: '#1a2b4a' }}>Supprimer ce cut ?</p>
+        <p className="text-sm mb-5" style={{ color: '#8a93a2' }}>
+          Cette action est irréversible. Le fichier vidéo associé sera également supprimé.
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={onCancel}
+            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold"
+            style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }}>
+            Annuler
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
+            style={{ backgroundColor: '#DC2626' }}>
+            Supprimer
+          </button>
+        </div>
+      </div>
+    </>
   )
 }
 
