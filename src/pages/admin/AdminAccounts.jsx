@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import xano from '../../lib/xano'
 import { Toast, useToast, useConfirm, SearchInput, SkeletonStats, SkeletonList, useDebounce } from '../../components/SharedUI'
 
@@ -32,7 +32,10 @@ export default function AdminAccounts() {
     Promise.all([xano.getAll('partners'), xano.getAll('partner_members')]).then(([p,m])=>{setPartners(p);setMembers(m)}).catch(console.error).finally(()=>setLoading(false))
   }, [])
 
-  const getPartnerName = id => partners.find(x=>x.id===parseInt(id))?.name||'Inconnu'
+  const getPartnerName = useCallback(
+    id => partners.find(x => x.id === parseInt(id))?.name || 'Inconnu',
+    [partners],
+  )
 
   const handleCreate = async e => {
     e.preventDefault()
@@ -89,7 +92,7 @@ export default function AdminAccounts() {
     if (!debouncedSearch) return members
     const s = debouncedSearch.toLowerCase()
     return members.filter(m=>`${m.user_email} ${getPartnerName(m.partner_id)}`.toLowerCase().includes(s))
-  }, [members, debouncedSearch, partners])
+  }, [members, debouncedSearch, getPartnerName])
 
   const membersByPartner = {}
   filteredMembers.forEach(m => { const name=getPartnerName(m.partner_id); (membersByPartner[name]=membersByPartner[name]||[]).push(m) })
