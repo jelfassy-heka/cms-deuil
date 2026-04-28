@@ -370,8 +370,68 @@ Corriger uniquement l’UI de Cocon pour améliorer la lisibilité des vignettes
 
 ## Lot 6 — Données futures / backend / sécurité
 
-Non démarré. Couvrira notamment :
-- Champs back manquants (date d'activation, ouverture/clic email, relance, adoption par département…).
-- Audits de sécurité côté Xano (RLS / accès partenaire / accès admin).
-- Routine de purge / migration des données obsolètes.
-- Alignement éventuel des conventions de paramètres (`partnerId` vs `partner_id`) côté serveur.
+### Statut
+
+Volet documentation **validé**. Prochaines étapes opérationnelles côté Xano à planifier.
+
+### Objectif
+
+Préparer la roadmap données futures, backend et sécurité **sans refonte
+frontend, sans nouvelle dépendance et sans modification backend directe**. Le
+lot 6 produit la cartographie et les checklists qui guideront les chantiers
+backend et les lots frontend ultérieurs (alignement bearer, intégrations
+Brevo/RevenueCat/Bridge App, table d'audit, etc.).
+
+### Livrables documentaires
+
+- [`docs/api-endpoint-inventory.md`](api-endpoint-inventory.md) — cartographie complète des endpoints utilisés (3 workspaces Xano : CMS, App, Auth) avec source frontend, méthode HTTP, sensibilité, accès attendu et risques identifiés.
+- [`docs/future-data-roadmap.md`](future-data-roadmap.md) — données manquantes à produire côté backend, regroupées par thème (codes/activation, partenaires/salariés, support, audit/sécurité), avec priorité, dépendance externe et blocage actuel pour chacune.
+- [`docs/xano-security-hardening-checklist.md`](xano-security-hardening-checklist.md) — checklist actionnable de durcissement Xano : auth/autorisation, Cocon, uploads (pattern validé), audit logs, plan de tests.
+- [`docs/frontend-security-notes.md`](frontend-security-notes.md) — audit des garde-fous existants côté client (AuthContext, routes protégées, stockage token/localStorage, logout, écrans partenaires) et limites qui nécessitent absolument un contrôle backend.
+
+### Validation locale
+
+- `npm run lint` : OK, 0 erreur, 0 warning.
+- `npm run build` : OK.
+- `npm run dev` : OK.
+
+Aucun fichier source applicatif (`.jsx` / `.js` autre que documentation) n'a été modifié dans ce lot — uniquement `docs/`.
+
+### Risques majeurs identifiés (à durcir côté Xano)
+
+1. **Filtrage côté client uniquement** sur la majorité des CRUD CMS et App (`xano.js` et `xanoApp.js` n'envoient pas de bearer aujourd'hui). Toute la sécurité repose sur la configuration Xano.
+2. **`auth/signup` appelé sans bearer** depuis l'écran admin — risque de signup public si Xano n'impose pas un contrôle.
+3. **Liste complète de `partner_members` exposée** au login pour résoudre le `partnerId` côté client → fuite PII team.
+4. **Endpoints Cocon `admin-*` sans bearer** : catalogue + CRUD Cocon ouverts si Xano ne valide pas la session.
+5. **`verify-password` n'est pas un contrôle d'autorisation** — un mot de passe valide ne prouve pas le rôle admin ; backend doit re-valider après.
+6. **`send-code-email` / `send-email`** doivent valider l'ownership (token / code / destinataire) pour éviter spam et exfiltration de codes.
+
+### Hors périmètre
+
+- Aucune modification d'endpoint Xano (pas d'accès backend depuis ce lot).
+- Aucun affichage de données futures côté frontend (pas de mock).
+- Aucun changement UI, route ou data layer.
+- Aucune intégration Brevo / RevenueCat / Bridge App.
+- Aucune nouvelle dépendance.
+- `package.json` / `package-lock.json` non modifiés.
+
+### Prochaines actions backend Xano (à planifier hors repo)
+
+Dans l'ordre suggéré :
+
+1. **Activer le filtrage `partner_id` côté serveur** sur tous les endpoints listés dans la checklist §A.2 et §A.3.
+2. **Restreindre `auth/signup`** aux bearers admin et adapter l'appel frontend dans un lot frontend dédié (`AdminAccounts.jsx`).
+3. **Créer un endpoint `/me/partner_membership`** qui retourne les memberships du token, pour remplacer le `getAll('partner_members')` du login.
+4. **Sécuriser les endpoints Cocon `admin-*`** (admin only + validation max 4 cuts par séance côté serveur).
+5. **Créer la table `audit_logs`** et journaliser les actions critiques listées dans la checklist §D.
+6. **Mettre en place rate limiting** sur `auth/login`, `forgot-password`, `send-email`, `send-code-email`.
+7. **Activer le pipeline Brevo → Xano** (webhooks ouvert/clic/bounce) pour débloquer les KPI funnel email du lot 2.
+8. **Aligner conventions** : éliminer la divergence `partnerId` (camelCase) sur `plan-activation-code` au profit de `partner_id` (snake_case) — nécessite migration Xano + lot frontend de réalignement.
+
+### Prochaines actions frontend (à planifier dans des lots dédiés, après hardening backend)
+
+- Ajouter le bearer token aux clients `xano.js` et `xanoApp.js` une fois Xano configuré pour l'exiger.
+- Remplacer `getAll('partner_members')` par l'endpoint `/me/partner_membership`.
+- Adapter `AdminAccounts.jsx` pour transmettre le bearer admin sur `auth/signup`.
+- Étudier une CSP stricte et le passage d'éventuel cookie HttpOnly côté Vercel (cf. `frontend-security-notes.md` §7).
+- Reprendre l'affichage frontend des données débloquées (date d'envoi, ouvert, activation, relances, adoption par département…) dans des lots dédiés une fois disponibles.
