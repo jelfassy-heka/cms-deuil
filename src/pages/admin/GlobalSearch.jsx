@@ -167,6 +167,13 @@ export default function GlobalSearch({ datasets, onSelect }) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isOpen])
 
+  const handleSelect = useCallback((item) => {
+    if (onSelect) onSelect(item.action, item.id, item.raw, item.sourceKey)
+    setQuery('')
+    setIsOpen(false)
+    setSelectedIndex(0)
+  }, [onSelect])
+
   // Navigation clavier dans les résultats
   const handleKeyDown = useCallback((e) => {
     if (!showDropdown || !hasResults) {
@@ -194,14 +201,7 @@ export default function GlobalSearch({ datasets, onSelect }) {
         inputRef.current?.blur()
         break
     }
-  }, [showDropdown, hasResults, flatResults, selectedIndex])
-
-  const handleSelect = useCallback((item) => {
-    if (onSelect) onSelect(item.action, item.id, item.raw, item.sourceKey)
-    setQuery('')
-    setIsOpen(false)
-    setSelectedIndex(0)
-  }, [onSelect])
+  }, [showDropdown, hasResults, flatResults, selectedIndex, handleSelect])
 
   // Reset index quand les résultats changent
   useEffect(() => { setSelectedIndex(0) }, [debouncedQuery])

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
 import xano from '../../lib/xano'
 import { SparklineChart, buildSparklineData } from '../../components/SharedUI'
@@ -13,7 +13,17 @@ import AllBeneficiaries from './AllBeneficiaries'
 import Analytics from './Analytics'
 import NotificationCenter from './NotificationCenter'
 import GlobalSearch from './GlobalSearch'
-import Cocon from './Cocon'
+// Cocon est l'écran le plus volumineux (~2k lignes) ; on le charge à la demande
+// pour qu'il ne pèse pas sur le bundle initial admin.
+const Cocon = lazy(() => import('./Cocon'))
+
+function CoconFallback() {
+  return (
+    <div className="flex items-center justify-center py-24">
+      <p className="text-sm" style={{ color: '#8a93a2' }}>Chargement de Cocon…</p>
+    </div>
+  )
+}
 
 const APP_USERS_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8/app-users'
 
@@ -511,7 +521,11 @@ export default function AdminDashboard() {
         {activePage === 'activity-log' && <ActivityLog />}
         {activePage === 'all-beneficiaries' && <AllBeneficiaries />}
         {activePage === 'analytics' && <Analytics />}
-        {activePage === 'cocon' && <Cocon />}
+        {activePage === 'cocon' && (
+          <Suspense fallback={<CoconFallback />}>
+            <Cocon />
+          </Suspense>
+        )}
       </div>
     </div>
   )
