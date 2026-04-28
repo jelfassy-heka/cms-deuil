@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import xano from '../../lib/xano'
 import { useAuth } from '../../context/AuthContext'
+import { useConfirm } from '../../components/SharedUI'
 
 const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
 
@@ -30,6 +31,7 @@ export default function PartnerTeam({ partnerId }) {
   const [partnerInfo, setPartnerInfo] = useState(null)
   const [benefCount, setBenefCount] = useState(0)
   const [codesCount, setCodesCount] = useState({ total: 0, used: 0 })
+  const { confirm, ConfirmDialog } = useConfirm()
 
   const isAdmin = memberRole === 'admin'
 
@@ -90,7 +92,8 @@ export default function PartnerTeam({ partnerId }) {
   }
 
   const handleRemove = async (memberId) => {
-    if (!window.confirm('Retirer ce membre de l\'espace ?')) return
+    const ok = await confirm('Retirer ce membre', 'Voulez-vous retirer ce membre de l\'espace ?', { confirmLabel: 'Retirer', confirmColor: '#ef4444' })
+    if (!ok) return
     try {
       await xano.remove('partner_members', memberId)
       setMembers(members.filter(m => m.id !== memberId))
@@ -111,6 +114,7 @@ export default function PartnerTeam({ partnerId }) {
 
   return (
     <div>
+      {ConfirmDialog}
       <div className="mb-6 md:mb-8">
         <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Mon équipe</h1>
         <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>
