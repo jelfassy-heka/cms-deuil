@@ -204,7 +204,7 @@ export default function AdminDashboard() {
           xano.getAll('plan-activation-code'),
         ])
         setDatasets(prev => ({ ...prev, requests, users, codes }))
-      } catch (err) { /* silencieux */ }
+      } catch { /* silencieux */ }
     }, 60000)
     return () => clearInterval(interval)
   }, [])
@@ -227,7 +227,7 @@ export default function AdminDashboard() {
   }
 
   // Callback pour la recherche globale
-  const handleSearchSelect = (action, id, raw, sourceKey) => {
+  const handleSearchSelect = (action, _id, _raw, _sourceKey) => {
     setActivePage(action)
     // On pourrait ouvrir une modale ici selon le type
   }

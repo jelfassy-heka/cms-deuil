@@ -73,7 +73,7 @@ export default function Partners() {
   const [form, setForm] = useState({ name:'',partner_type:'entreprise',crm_status:'prospect',notes_internes:'' })
   const [contacts, setContacts] = useState([{ firstname:'',lastname:'',role:'',email:'',phone:'' }])
   const { toast, showToast, clearToast } = useToast()
-  const { confirm, ConfirmDialog } = useConfirm()
+  const { ConfirmDialog } = useConfirm()
   const debouncedSearch = useDebounce(search)
 
   useEffect(() => { xano.getAll('partners').then(setPartners).catch(console.error).finally(()=>setLoading(false)) }, [])
