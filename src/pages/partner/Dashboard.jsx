@@ -2,15 +2,22 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, Tooltip } from 'recharts'
-import xano from '../../lib/xano'
 import { MetricCard } from '../../components/SharedUI'
+import * as partnerApi from '../../api/partnerApi'
+import { usePartnerDashboardData } from '../../hooks/usePartnerDashboardData'
+import {
+  computeCodeStats,
+  computeBeneficiariesWithoutCode,
+  computeOpenRequestsCount,
+  computeSendChartData,
+  computeDonutData,
+} from '../../utils/partnerMetrics'
 import PartnerCodes from './PartnerCodes'
 import PartnerTeam from './PartnerTeam'
 import PartnerProfile from './PartnerProfile'
 import PartnerHelp from './PartnerHelp'
 import PartnerNotifications, { computePartnerNotifications } from './PartnerNotifications'
 
-const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
 const ADMIN_EMAIL = 'jelfassy@heka-app.fr'
 
 // ─── URL de prise de RDV Google Calendar ───
@@ -19,11 +26,7 @@ const GOOGLE_CALENDAR_BOOKING_URL = 'https://calendar.app.google/RfrDN99k42atgAK
 
 const sendEmail = async (to_email, to_name, template_id, params) => {
   try {
-    await fetch(`${XANO_BASE}/send-email`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to_email, to_name, template_id, params: JSON.stringify(params) }),
-    })
+    await partnerApi.sendNotificationEmail(to_email, to_name, template_id, params)
   } catch (err) { console.error('Erreur envoi email:', err) }
 }
 
@@ -200,12 +203,17 @@ export default function PartnerDashboard() {
   const { user, partnerId, memberRole, signOut } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const [codes, setCodes] = useState([])
-  const [contract, setContract] = useState(null)
-  const [requests, setRequests] = useState([])
-  const [beneficiaries, setBeneficiaries] = useState([])
-  const [partnerInfo, setPartnerInfo] = useState(null)
-  const [loading, setLoading] = useState(true)
+
+  // Garde d'authentification — comportement préservé du lot 3.
+  useEffect(() => {
+    if (!user || !partnerId) navigate('/login')
+  }, [user, partnerId, navigate])
+
+  const {
+    codes, beneficiaries, contract, requests, partnerInfo,
+    loading, setRequests,
+  } = usePartnerDashboardData(partnerId)
+
   const [activeRequestType, setActiveRequestType] = useState(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -225,24 +233,6 @@ export default function PartnerDashboard() {
   }, [toast])
 
   useEffect(() => { const c=()=>{const m=window.innerWidth<768;setIsMobile(m);if(m)setSidebarOpen(false)}; c(); window.addEventListener('resize',c); return()=>window.removeEventListener('resize',c) }, [])
-
-  useEffect(() => {
-    if (!user || !partnerId) { navigate('/login'); return }
-    const fetchData = async () => {
-      try {
-        const [codesData, contractsData, requestsData, partnerData, benefData] = await Promise.all([
-          xano.getAll('plan-activation-code', { partnerId }),
-          xano.getAll('contracts', { partner_id: partnerId }),
-          xano.getAll('code_request', { partner_id: partnerId }),
-          xano.getOne('partners', partnerId),
-          xano.getAll('beneficiaries', { partner_id: partnerId }),
-        ])
-        setCodes(codesData); setContract(contractsData[0] || null); setRequests(requestsData); setPartnerInfo(partnerData); setBeneficiaries(benefData)
-      } catch (err) { console.error('Erreur:', err) }
-      finally { setLoading(false) }
-    }
-    fetchData()
-  }, [user, partnerId])
 
   const handleSignOut = async () => { await signOut(); navigate('/login') }
   const handleNavClick = path => {
@@ -264,7 +254,7 @@ export default function PartnerDashboard() {
 
   const handleRequest = async formData => {
     try {
-      const created = await xano.create('code_request', {
+      const created = await partnerApi.createRequest({
         quantity: formData.quantity || 1, reason: formData.reason || formData.message || '',
         request_status: 'pending', request_type: formData.request_type,
         preferred_date: formData.preferred_date || null, preferred_date_2: formData.preferred_date_2 || null,
@@ -302,44 +292,17 @@ export default function PartnerDashboard() {
     } catch (err) { console.error('Erreur:', err) }
   }
 
-  const usedCodes = codes.filter(c => c.used).length
-  const activationRate = codes.length > 0 ? Math.round((usedCodes / codes.length) * 100) : 0
+  const codeStats = useMemo(() => computeCodeStats({ codes, beneficiaries }), [codes, beneficiaries])
+  const usedCodes = codeStats.used
+  const activationRate = codeStats.activationRate
+  const availableCodesCount = codeStats.available
+  const sentCodesCount = codeStats.sent
+  const benefWithoutCode = useMemo(() => computeBeneficiariesWithoutCode(beneficiaries), [beneficiaries])
+  const openRequests = useMemo(() => computeOpenRequestsCount(requests), [requests])
   const partnerName = partnerInfo?.name || 'Espace partenaire'
 
-  // ─── KPI cockpit (données réellement disponibles) ─
-  const assignedSet = new Set(beneficiaries.filter(b => b.code).map(b => b.code))
-  const availableCodesCount = codes.filter(c => !c.used && !assignedSet.has(c.code)).length
-  const sentCodesCount = codes.filter(c => !c.used && assignedSet.has(c.code)).length
-  const benefWithoutCode = beneficiaries.filter(b => !b.code).length
-  const openRequests = requests.filter(r => r.request_status === 'pending' || r.request_status === 'in_progress').length
-
-  // Données pour le graphique courbe (envois par semaine sur 12 semaines)
-  const sendChartData = useMemo(() => {
-    const now = new Date()
-    const data = []
-    for (let i = 11; i >= 0; i--) {
-      const weekStart = new Date(now - (i + 1) * 7 * 24 * 60 * 60 * 1000)
-      const weekEnd = new Date(now - i * 7 * 24 * 60 * 60 * 1000)
-      const count = beneficiaries.filter(b =>
-        b.sent_at && new Date(b.sent_at) >= weekStart && new Date(b.sent_at) < weekEnd
-      ).length
-      const label = weekStart.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
-      data.push({ label, value: count })
-    }
-    return data
-  }, [beneficiaries])
-
-  // Données pour le donut (répartition codes)
-  const donutData = useMemo(() => {
-    const aSet = new Set(beneficiaries.filter(b => b.code).map(b => b.code))
-    const sent = codes.filter(c => !c.used && aSet.has(c.code)).length
-    const available = codes.length - usedCodes - sent
-    return [
-      { name: 'Disponibles', value: available, color: '#2BBFB3' },
-      { name: 'Envoyés', value: sent, color: '#3b82f6' },
-      { name: 'Activés', value: usedCodes, color: '#1a2b4a' },
-    ]
-  }, [codes, beneficiaries, usedCodes])
+  const sendChartData = useMemo(() => computeSendChartData(beneficiaries, 12), [beneficiaries])
+  const donutData = useMemo(() => computeDonutData({ codes, beneficiaries }), [codes, beneficiaries])
 
   // Données pour les notifications
   const notifData = useMemo(() => ({
