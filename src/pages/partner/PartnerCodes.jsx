@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
-import xano from '../../lib/xano'
+import { useState, useRef, useMemo } from 'react'
 import { Toast, useToast, ConfirmModal, useConfirm, SearchInput, CopyButton, SkeletonStats, SkeletonList, useDebounce, EmptyState, exportToCSV, MetricCard, StatusBadge } from '../../components/SharedUI'
+import * as partnerApi from '../../api/partnerApi'
+import { usePartnerCodes } from '../../hooks/usePartnerCodes'
+import { computeCodeStats, enrichBeneficiaries, countByEnrichedStatus } from '../../utils/partnerMetrics'
 
 // Masque un code en ne laissant visibles que les 3 derniers caractères
 const maskCode = (code) => {
@@ -8,8 +10,6 @@ const maskCode = (code) => {
   if (code.length <= 4) return code
   return '••••' + code.slice(-3)
 }
-
-const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
 
 const STATUS_CONFIG = {
   pending: { label: 'En attente', color: '#d97706', bg: '#fef3c7', order: 0 },
@@ -59,7 +59,7 @@ function ImportModal({ onClose, onImport, partnerId }) {
       const row=csvData.rows[i]; const b={partner_id:partnerId}
       for(const[col,field]of Object.entries(mapping)){if(field&&row[col])b[field]=row[col]}
       if(!b.first_name||!b.email){errors.push({row:i+2,reason:'Données manquantes'});setProgress(p=>({...p,current:i+1,errors}));continue}
-      try{imported.push(await xano.create('beneficiaries',b))}catch(err){errors.push({row:i+2,reason:err.message})}
+      try{imported.push(await partnerApi.createBeneficiary(b))}catch(err){errors.push({row:i+2,reason:err.message})}
       setProgress({current:i+1,total,errors})
     }
     setStep(4); onImport(imported)
@@ -84,7 +84,7 @@ function ImportModal({ onClose, onImport, partnerId }) {
 function AddBeneficiaryModal({ onClose, onAdd, partnerId }) {
   const [form, setForm] = useState({ first_name:'', last_name:'', email:'', department:'' })
   const [loading, setLoading] = useState(false)
-  const handleSubmit = async e => { e.preventDefault(); setLoading(true); try { const c=await xano.create('beneficiaries',{...form,partner_id:partnerId,code:'',status:'pending'}); onAdd(c); onClose() } catch(err){console.error(err)} finally{setLoading(false)} }
+  const handleSubmit = async e => { e.preventDefault(); setLoading(true); try { const c=await partnerApi.createBeneficiary({...form,partner_id:partnerId,code:'',status:'pending'}); onAdd(c); onClose() } catch(err){console.error(err)} finally{setLoading(false)} }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4" style={{backgroundColor:'rgba(26,43,74,0.5)'}} onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -156,9 +156,8 @@ function BatchSendPanel({ count, maxSendable, onSend, onCancel }) {
 
 // ─── Composant principal ──────────────────────────
 export default function PartnerCodes({ partnerId }) {
-  const [codes, setCodes] = useState([])
-  const [beneficiaries, setBeneficiaries] = useState([])
-  const [loading, setLoading] = useState(true)
+  const { codes, beneficiaries, partnerName, loading, setBeneficiaries } = usePartnerCodes(partnerId)
+
   const [tab, setTab] = useState('beneficiaries')
   const [showAddModal, setShowAddModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -166,7 +165,6 @@ export default function PartnerCodes({ partnerId }) {
   const [sendingCode, setSendingCode] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [partnerName, setPartnerName] = useState('')
   const { toast, showToast, clearToast } = useToast()
   const { confirm, ConfirmDialog } = useConfirm()
   const debouncedSearch = useDebounce(search)
@@ -177,41 +175,20 @@ export default function PartnerCodes({ partnerId }) {
   const [showBatchConfirm, setShowBatchConfirm] = useState(false)
   const [batchProgress, setBatchProgress] = useState(null) // { current, total, log[] }
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [codesData, benefData] = await Promise.all([
-          xano.getAll('plan-activation-code', { partnerId }),
-          xano.getAll('beneficiaries', { partner_id: partnerId }),
-        ])
-        setCodes(codesData); setBeneficiaries(benefData)
-        try { const p = await xano.getOne('partners', partnerId); setPartnerName(p.name) } catch { /* nom partenaire optionnel */ }
-      } catch (err) { console.error(err) } finally { setLoading(false) }
-    }
-    if (partnerId) fetchData()
-  }, [partnerId])
+  const codeStats = useMemo(() => computeCodeStats({ codes, beneficiaries }), [codes, beneficiaries])
+  const usageRate = codeStats.activationRate
+  const assignedCodes = useMemo(() => new Set(beneficiaries.filter(b => b.code).map(b => b.code)), [beneficiaries])
+  const availableCodes = useMemo(() => codes.filter(c => !c.used && !assignedCodes.has(c.code)), [codes, assignedCodes])
+  const sentCount = useMemo(
+    () => beneficiaries.filter(b => b.status === 'sent' || b.status === 'activated').length,
+    [beneficiaries],
+  )
 
-  const usedCodes = codes.filter(c => c.used).length
-  const assignedCodes = new Set(beneficiaries.filter(b => b.code).map(b => b.code))
-  const availableCodes = codes.filter(c => !c.used && !assignedCodes.has(c.code))
-  const sentCount = beneficiaries.filter(b => b.status==='sent'||b.status==='activated').length
-  const usageRate = codes.length > 0 ? Math.round((usedCodes / codes.length) * 100) : 0
-
-  // Enrichir le statut avec le funnel
-  const enrichedBeneficiaries = useMemo(() => {
-    return beneficiaries.map(b => {
-      let status = b.status || 'pending'
-      // Vérifier si le code est utilisé (activated)
-      if (b.code && codes.find(c => c.code === b.code && c.used)) {
-        status = 'activated'
-      }
-      // Vérifier opened (via email_opened_at si le champ existe)
-      if (status === 'sent' && b.email_opened_at) {
-        status = 'opened'
-      }
-      return { ...b, enrichedStatus: status }
-    })
-  }, [beneficiaries, codes])
+  // Funnel statut enrichi déplacé dans utils/partnerMetrics.
+  const enrichedBeneficiaries = useMemo(
+    () => enrichBeneficiaries({ beneficiaries, codes }),
+    [beneficiaries, codes],
+  )
 
   const filteredBeneficiaries = useMemo(() => {
     let list = enrichedBeneficiaries
@@ -225,13 +202,7 @@ export default function PartnerCodes({ partnerId }) {
     return list
   }, [enrichedBeneficiaries, debouncedSearch, statusFilter])
 
-  const statusCounts = useMemo(() => ({
-    all: enrichedBeneficiaries.length,
-    pending: enrichedBeneficiaries.filter(b => b.enrichedStatus === 'pending').length,
-    sent: enrichedBeneficiaries.filter(b => b.enrichedStatus === 'sent').length,
-    opened: enrichedBeneficiaries.filter(b => b.enrichedStatus === 'opened').length,
-    activated: enrichedBeneficiaries.filter(b => b.enrichedStatus === 'activated').length,
-  }), [enrichedBeneficiaries])
+  const statusCounts = useMemo(() => countByEnrichedStatus(enrichedBeneficiaries), [enrichedBeneficiaries])
 
   // Eligible pour batch (pas encore envoyé)
   const eligibleForBatch = filteredBeneficiaries.filter(b => b.enrichedStatus === 'pending' && !b.code)
@@ -242,9 +213,16 @@ export default function PartnerCodes({ partnerId }) {
     const ok = await confirm('Confirmer l\'envoi', `Envoyer le code ${sendingCode} à ${benef.first_name} ${benef.last_name} (${benef.email}) ?`, { confirmLabel: 'Envoyer', confirmColor: '#2BBFB3' })
     if (!ok) return
     try {
-      await xano.update('beneficiaries', benef.id, { code: sendingCode, status: 'sent', sent_at: new Date().toISOString() })
-      await fetch(`${XANO_BASE}/send-code-email`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to_email: benef.email, to_name: benef.first_name, code: sendingCode, partner_name: partnerName || 'Votre entreprise', template_id: 9 }) })
-      setBeneficiaries(prev => prev.map(b => b.id === benef.id ? { ...b, code: sendingCode, status: 'sent', sent_at: new Date().toISOString() } : b))
+      const sentAt = new Date().toISOString()
+      await partnerApi.updateBeneficiary(benef.id, { code: sendingCode, status: 'sent', sent_at: sentAt })
+      await partnerApi.sendCodeEmail({
+        to_email: benef.email,
+        to_name: benef.first_name,
+        code: sendingCode,
+        partner_name: partnerName || 'Votre entreprise',
+        template_id: 9,
+      })
+      setBeneficiaries(prev => prev.map(b => b.id === benef.id ? { ...b, code: sendingCode, status: 'sent', sent_at: sentAt } : b))
       setSendingTo(null); setSendingCode('')
       showToast(`Code ${sendingCode} envoyé à ${benef.first_name}`)
     } catch (err) { console.error(err); showToast('Erreur lors de l\'envoi', 'error') }
@@ -284,8 +262,9 @@ export default function PartnerCodes({ partnerId }) {
       }
 
       try {
-        await xano.update('beneficiaries', benef.id, {
-          code: code.code, status: 'sent', sent_at: new Date().toISOString(),
+        const sentAt = new Date().toISOString()
+        await partnerApi.updateBeneficiary(benef.id, {
+          code: code.code, status: 'sent', sent_at: sentAt,
         })
         const emailBody = {
           to_email: benef.email,
@@ -295,12 +274,9 @@ export default function PartnerCodes({ partnerId }) {
           template_id: 9,
         }
         if (customMessage) emailBody.custom_message = customMessage
-        await fetch(`${XANO_BASE}/send-code-email`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(emailBody),
-        })
+        await partnerApi.sendCodeEmail(emailBody)
 
-        setBeneficiaries(prev => prev.map(b => b.id === benef.id ? { ...b, code: code.code, status: 'sent', sent_at: new Date().toISOString() } : b))
+        setBeneficiaries(prev => prev.map(b => b.id === benef.id ? { ...b, code: code.code, status: 'sent', sent_at: sentAt } : b))
         log.push({ name: `${benef.first_name} ${benef.last_name}`, status: 'success' })
       } catch {
         log.push({ name: `${benef.first_name} ${benef.last_name}`, status: 'error' })

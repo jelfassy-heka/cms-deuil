@@ -1,10 +1,7 @@
 import { useState, useEffect } from 'react'
-import xano from '../../lib/xano'
 import { useAuth } from '../../context/AuthContext'
 import { Toast, useToast } from '../../components/SharedUI'
-
-const XANO_AUTH_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:IS_IPWIL'
-const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
+import * as partnerApi from '../../api/partnerApi'
 
 function PasswordInput({ value, onChange, placeholder = '••••••••' }) {
   const [show, setShow] = useState(false)
@@ -24,11 +21,7 @@ function PasswordInput({ value, onChange, placeholder = '•••••••�
 
 const sendEmail = async (to_email, to_name, template_id, params) => {
   try {
-    await fetch(`${XANO_BASE}/send-email`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to_email, to_name, template_id, params: JSON.stringify(params) }),
-    })
+    await partnerApi.sendNotificationEmail(to_email, to_name, template_id, params)
   } catch (err) { console.error('Erreur envoi email:', err) }
 }
 
@@ -52,7 +45,7 @@ export default function PartnerProfile({ partnerId }) {
   useEffect(() => {
     const fetchPartner = async () => {
       try {
-        const data = await xano.getOne('partners', partnerId)
+        const data = await partnerApi.getPartner(partnerId)
         setPartnerInfo(data)
         setForm({
           name: data.name || '', email_contact: data.email_contact || '',
@@ -72,7 +65,7 @@ export default function PartnerProfile({ partnerId }) {
     if (!form.name || !form.email_contact) { showToast('Le nom et l\'email sont requis', 'warning'); return }
     setSaving(true)
     try {
-      const updated = await xano.update('partners', partnerId, form)
+      const updated = await partnerApi.updatePartner(partnerId, form)
       setPartnerInfo(updated)
       showToast('Informations mises à jour')
     } catch (err) { console.error(err); showToast('Erreur lors de la mise à jour', 'error') }
@@ -88,11 +81,7 @@ export default function PartnerProfile({ partnerId }) {
     setPwSaving(true)
     try {
       const authToken = getAuthToken()
-      const response = await fetch(`${XANO_AUTH_URL}/change-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-        body: JSON.stringify({ old_password: pwForm.current, new_password: pwForm.newPw }),
-      })
+      const response = await partnerApi.changePassword(authToken, pwForm.current, pwForm.newPw)
 
       if (!response.ok) {
         const err = await response.json()

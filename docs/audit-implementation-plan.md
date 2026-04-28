@@ -38,7 +38,7 @@ Action :
   - `partner/Dashboard.jsx` : dépendance `navigate`
 - `npm run build` : OK, build généré.
 - Warning build : taille de chunk élevée, préexistant, non bloquant pour le lot 0.
-- `npm run dev` : OK / KO à compléter après test local.
+- `npm run dev` : OK 
 
 ### Changements lot 0
 
@@ -65,8 +65,8 @@ L’erreur précédente semble donc être un incident local/transitoire npm ou r
 3. Lot 2 — UI partenaire version actuelle
 4. Lot 3 — Routing partenaire durable
 5. Lot 4 — Data layer / hooks API
-6. Lot 5 — Cocon UX après validation L3c
-7. Lot 6 — Données futures / backend / sécurité
+5. Lot 5 — Performance frontend & dette technique
+6. Lot 6 — Données futures / backend / sécurité
 
 ## Règles de livraison
 
@@ -75,7 +75,8 @@ L’erreur précédente semble donc être un incident local/transitoire npm ou r
 - Pas de modification backend Xano sans test isolé.
 - Pas de push production sans lint/build/test manuel.
 - Ne pas mélanger refonte UI, routing et data layer dans un même lot.
-- Ne pas modifier Cocon tant que L3c n’est pas validée.
+- Cocon L3c et UX Cocon sont considérées comme livrées et testées.
+- Toute modification future de Cocon doit être traitée comme un lot dédié, avec tests de régression Cocon complets
 
 ## Lots de déploiement
 - Lot 0 — Baseline & garde-fous
@@ -83,7 +84,7 @@ L’erreur précédente semble donc être un incident local/transitoire npm ou r
 - Lot 2 — UI partenaire version actuelle
 - Lot 3 — Routing partenaire durable
 - Lot 4 — Data layer / hooks API
-- Lot 5 — Cocon UX après validation L3c
+- Lot 5 — Performance frontend & dette technique
 - Lot 6 — Données futures / backend / sécurité
 
 ## Règles
@@ -263,3 +264,69 @@ PartnerHelp :
 - Cocon non modifié.
 - Pas de modification package.json / package-lock.json.
 - Pas de nouvelle dépendance.
+
+## Lot 3 — Routing partenaire durable
+
+### Statut
+
+Validé.
+
+### Objectif
+
+Migrer progressivement la navigation interne de l’espace Partenaire vers des routes profondes, sans changement backend, sans refonte UI et sans toucher à Cocon.
+
+### Validation locale
+
+- `npm run lint` : OK
+- `npm run build` : OK
+- `npm run dev` : OK
+
+### Tests fonctionnels réalisés
+
+- `/partner` affiche le dashboard partenaire.
+- `/partner/codes` affiche les codes.
+- `/partner/team` affiche l’équipe.
+- `/partner/contract` affiche le contrat ou une route exploitable.
+- `/partner/requests` affiche les demandes.
+- `/partner/requests/new` affiche une création de demande ou redirige proprement vers une route exploitable.
+- `/partner/profile` affiche le profil.
+- `/partner/help` affiche l’aide.
+- `/partner/notifications` affiche les notifications si la page existe.
+- Refresh navigateur validé sur les routes profondes.
+- Bouton retour navigateur validé.
+- Sidebar desktop validée.
+- Sidebar mobile validée.
+- CTA internes partenaires validés.
+- Accès auth partenaire/admin/non-auth vérifié.
+
+### Résultat
+
+L’espace Partenaire dispose désormais d’URLs profondes partageables et compatibles refresh navigateur grâce au routing React Router et au rewrite SPA Vercel.
+
+### Hors périmètre conservé
+
+- Pas de data layer.
+- Pas de modification backend Xano.
+- Pas de modification Cocon.
+- Pas de refonte UI globale.
+- Pas de nouvelle dépendance.
+- Pas de modification `package.json` / `package-lock.json`.
+
+## Mise à jour de cadrage — Cocon
+
+Le CDC CMS Héka v3.0 n’est plus à jour sur l’état de Cocon.
+
+Le CDC indiquait encore :
+- L3c en cours / tests bout en bout à valider ;
+- UX Cocon à spécifier après L3c.
+
+Statut projet actuel validé :
+- L3c est livrée et testée.
+- L’UX Cocon mentionnée dans le CDC est livrée et testée.
+
+Décision :
+- Le CDC v3.0 reste une référence historique et métier.
+- Pour l’état opérationnel actuel, le fichier de suivi et les validations de lots font foi.
+- Le Lot 5 n’est plus “Cocon UX après validation L3c”.
+- Le Lot 5 devient “Performance frontend & dette technique”.
+- Toute évolution Cocon future devra faire l’objet d’un lot séparé avec tests de régression Cocon complets.

@@ -1,17 +1,13 @@
-import { useState, useEffect } from 'react'
-import xano from '../../lib/xano'
+import { useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useConfirm, MetricCard, StatusBadge } from '../../components/SharedUI'
-
-const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
+import * as partnerApi from '../../api/partnerApi'
+import { usePartnerTeam } from '../../hooks/usePartnerTeam'
+import { computeTeamStats } from '../../utils/partnerMetrics'
 
 const sendEmail = async (to_email, to_name, template_id, params) => {
   try {
-    await fetch(`${XANO_BASE}/send-email`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to_email, to_name, template_id, params: JSON.stringify(params) }),
-    })
+    await partnerApi.sendNotificationEmail(to_email, to_name, template_id, params)
   } catch (err) { console.error('Erreur envoi email:', err) }
 }
 
@@ -22,31 +18,14 @@ const roleLabels = {
 
 export default function PartnerTeam({ partnerId }) {
   const { user, memberRole } = useAuth()
-  const [members, setMembers] = useState([])
-  const [loading, setLoading] = useState(true)
+  const { members, partnerInfo, loading, setMembers } = usePartnerTeam(partnerId)
   const [showInvite, setShowInvite] = useState(false)
   const [inviteForm, setInviteForm] = useState({ user_email: '', role: 'member' })
   const [inviteError, setInviteError] = useState('')
   const [inviteSuccess, setInviteSuccess] = useState('')
-  const [partnerInfo, setPartnerInfo] = useState(null)
   const { confirm, ConfirmDialog } = useConfirm()
 
   const isAdmin = memberRole === 'admin'
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [membersData, partnerData] = await Promise.all([
-          xano.getAll('partner_members', { partner_id: partnerId }),
-          xano.getOne('partners', partnerId),
-        ])
-        setMembers(membersData)
-        setPartnerInfo(partnerData)
-      } catch (err) { console.error('Erreur:', err) }
-      finally { setLoading(false) }
-    }
-    if (partnerId) fetchData()
-  }, [partnerId])
 
   const handleInvite = async e => {
     e.preventDefault()
@@ -59,7 +38,7 @@ export default function PartnerTeam({ partnerId }) {
     }
 
     try {
-      const created = await xano.create('partner_members', {
+      const created = await partnerApi.createMember({
         partner_id: partnerId,
         user_email: inviteForm.user_email,
         role: inviteForm.role,
@@ -89,20 +68,21 @@ export default function PartnerTeam({ partnerId }) {
     const ok = await confirm('Retirer ce membre', 'Voulez-vous retirer ce membre de l\'espace ?', { confirmLabel: 'Retirer', confirmColor: '#ef4444' })
     if (!ok) return
     try {
-      await xano.remove('partner_members', memberId)
+      await partnerApi.removeMember(memberId)
       setMembers(members.filter(m => m.id !== memberId))
     } catch (err) { console.error('Erreur:', err) }
   }
 
   const handleRoleChange = async (memberId, newRole) => {
     try {
-      await xano.update('partner_members', memberId, { role: newRole })
+      await partnerApi.updateMember(memberId, { role: newRole })
       setMembers(members.map(m => m.id === memberId ? { ...m, role: newRole } : m))
     } catch (err) { console.error('Erreur:', err) }
   }
 
   if (loading) return <div className="flex items-center justify-center h-64"><p style={{ color: '#8a93a2' }}>Chargement...</p></div>
 
+  const teamStats = computeTeamStats(members)
   const activeMembers = members.filter(m => m.status === 'active')
   const pendingMembers = members.filter(m => m.status === 'pending')
 
@@ -118,10 +98,10 @@ export default function PartnerTeam({ partnerId }) {
 
       {/* Stats équipe */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <MetricCard label="Membres actifs" value={activeMembers.length} color="#2BBFB3" />
-        <MetricCard label="Invitations en attente" value={pendingMembers.length} color={pendingMembers.length > 0 ? '#d97706' : '#8a93a2'} />
-        <MetricCard label="Administrateurs" value={members.filter(m => m.role === 'admin').length} color="#1a2b4a" />
-        <MetricCard label="Membres" value={members.filter(m => m.role === 'member').length} color="#8a93a2" />
+        <MetricCard label="Membres actifs" value={teamStats.active} color="#2BBFB3" />
+        <MetricCard label="Invitations en attente" value={teamStats.pending} color={teamStats.pending > 0 ? '#d97706' : '#8a93a2'} />
+        <MetricCard label="Administrateurs" value={teamStats.admins} color="#1a2b4a" />
+        <MetricCard label="Membres" value={teamStats.members} color="#8a93a2" />
       </div>
 
       {/* Bouton inviter (admin uniquement) */}
