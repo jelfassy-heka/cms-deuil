@@ -8,7 +8,8 @@
 4. Lot 3 — Routing partenaire durable
 5. Lot 4 — Data layer / hooks API Partenaire
 6. Lot 5 — Performance frontend & dette technique
-7. Lot 6 — Données futures / backend / sécurité (non démarré)
+7. Lot 5.1 — Correctif UI Cocon : contraste & états sélectionnés
+8. Lot 6 — Données futures / backend / sécurité (non démarré)
 
 ## Règles de livraison
 
@@ -311,6 +312,61 @@ Détail des chunks (post-build) :
 - Pas de nouvelle dépendance.
 - Pas de modification `package.json` / `package-lock.json`.
 - Pas de modification de la data layer du lot 4.
+
+## Lot 5.1 — Correctif UI Cocon : contraste & états sélectionnés
+
+### Statut
+
+Validé.
+
+### Objectif
+
+Corriger uniquement l’UI de Cocon pour améliorer la lisibilité des vignettes de thèmes, des blocs de thèmes ouverts, des bandes couleur et des états actifs, sans changement fonctionnel ni backend.
+
+### Validation locale
+
+- `npm run lint` : OK
+- `npm run build` : OK
+- `npm run dev` : OK
+
+### Corrections appliquées
+
+- Vignettes de thèmes rendues plus visibles sur fond clair.
+- Bande latérale colorée ajoutée ou fiabilisée sur les cartes de thèmes.
+- Couleur d’accent héritée des champs couleur du thème :
+  - `borderColor`
+  - `titleColor`
+  - `backgroundColor`
+  - fallback Héka si couleur invalide ou absente.
+- Surbrillance du thème ouvert/sélectionné.
+- Bloc de thème ouvert mieux contrasté avec bordure, ombre et rappel de couleur.
+- Séance active surbrillée avec teinte légère héritée de la couleur du thème.
+- Contour de séance active renforcé avec la couleur du thème.
+- Placeholder de vignette séance légèrement teinté si thumbnail absente.
+
+### Tests fonctionnels réalisés
+
+- Ouverture Cocon : OK.
+- Cartes de thèmes visibles sur fond clair : OK.
+- Bande latérale colorée visible sur chaque thème : OK.
+- Ouverture d’un thème : surbrillance thème OK.
+- Bloc de thème ouvert : contraste OK.
+- Ouverture d’une séance : surbrillance séance OK.
+- Ouverture d’un cut depuis une séance : séance parente toujours active visuellement.
+- Fermeture drawer : disparition correcte de la surbrillance séance.
+- Save / delete / upload / reorder : pas de régression visible.
+- Responsive Cocon : OK.
+
+### Hors périmètre conservé
+
+- Pas de modification backend Xano.
+- Pas de modification endpoint.
+- Pas de modification des payloads FormData.
+- Pas de modification des règles métier Cocon.
+- Pas de modification de la logique cuts.
+- Pas de modification `package.json` / `package-lock.json`.
+- Pas de nouvelle dépendance.
+- Pas de modification hors `Cocon.jsx`, sauf documentation de suivi.
 
 ## Lot 6 — Données futures / backend / sécurité
 
