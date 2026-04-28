@@ -162,6 +162,42 @@ export function CopyButton({ text, label = 'Copier' }) {
   )
 }
 
+// ─── Page Header ───────────────────────────────────
+export function PageHeader({ title, subtitle, action }) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+      <div className="min-w-0">
+        <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>{title}</h1>
+        {subtitle && <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>{subtitle}</p>}
+      </div>
+      {action && <div className="flex-shrink-0">{action}</div>}
+    </div>
+  )
+}
+
+// ─── Metric Card ───────────────────────────────────
+export function MetricCard({ label, value, color = '#1a2b4a', sublabel }) {
+  return (
+    <div className="bg-white rounded-2xl p-4" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
+      <p className="text-xl md:text-2xl font-bold mb-1" style={{ color }}>{value}</p>
+      <p className="text-xs" style={{ color: '#8a93a2' }}>{label}</p>
+      {sublabel && <p className="text-[10px] mt-1" style={{ color: '#8a93a2' }}>{sublabel}</p>}
+    </div>
+  )
+}
+
+// ─── Status Badge ──────────────────────────────────
+export function StatusBadge({ label, bg, color, size = 'md' }) {
+  const padding = size === 'sm' ? 'px-2 py-0.5' : 'px-2.5 py-1'
+  const fontSize = size === 'sm' ? 'text-[10px]' : 'text-xs'
+  return (
+    <span className={`${padding} ${fontSize} rounded-lg font-medium whitespace-nowrap`}
+      style={{ backgroundColor: bg, color }}>
+      {label}
+    </span>
+  )
+}
+
 // ─── Empty State ───────────────────────────────────
 export function EmptyState({ icon = '📭', title, message, actionLabel, onAction }) {
   return (

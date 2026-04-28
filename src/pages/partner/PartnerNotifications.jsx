@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-function computePartnerNotifications({ requests, codes, contract, beneficiaries }) {
+export function computePartnerNotifications({ requests, codes, contract, beneficiaries }) {
   const notifications = []
   const now = new Date()
 

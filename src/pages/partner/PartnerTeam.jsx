@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import xano from '../../lib/xano'
 import { useAuth } from '../../context/AuthContext'
-import { useConfirm } from '../../components/SharedUI'
+import { useConfirm, MetricCard, StatusBadge } from '../../components/SharedUI'
 
 const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
 
@@ -29,8 +29,6 @@ export default function PartnerTeam({ partnerId }) {
   const [inviteError, setInviteError] = useState('')
   const [inviteSuccess, setInviteSuccess] = useState('')
   const [partnerInfo, setPartnerInfo] = useState(null)
-  const [benefCount, setBenefCount] = useState(0)
-  const [codesCount, setCodesCount] = useState({ total: 0, used: 0 })
   const { confirm, ConfirmDialog } = useConfirm()
 
   const isAdmin = memberRole === 'admin'
@@ -38,16 +36,12 @@ export default function PartnerTeam({ partnerId }) {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [membersData, partnerData, benefData, codesData] = await Promise.all([
+        const [membersData, partnerData] = await Promise.all([
           xano.getAll('partner_members', { partner_id: partnerId }),
           xano.getOne('partners', partnerId),
-          xano.getAll('beneficiaries', { partner_id: partnerId }),
-          xano.getAll('plan-activation-code', { partnerId }),
         ])
         setMembers(membersData)
         setPartnerInfo(partnerData)
-        setBenefCount(benefData.length)
-        setCodesCount({ total: codesData.length, used: codesData.filter(c => c.used).length })
       } catch (err) { console.error('Erreur:', err) }
       finally { setLoading(false) }
     }
@@ -122,48 +116,12 @@ export default function PartnerTeam({ partnerId }) {
         </p>
       </div>
 
-      {/* Carte espace entreprise */}
-      <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6 mb-6"
-        style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-xl font-bold flex-shrink-0"
-            style={{ backgroundColor: '#2BBFB3' }}>
-            {partnerInfo?.name?.[0] || '?'}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-lg font-bold" style={{ color: '#1a2b4a' }}>{partnerInfo?.name || 'Espace partenaire'}</h2>
-            <p className="text-sm" style={{ color: '#8a93a2' }}>{partnerInfo?.partner_type || 'entreprise'}</p>
-          </div>
-          <div className="flex gap-3 flex-wrap">
-            <div className="text-center px-4">
-              <p className="text-xl font-bold" style={{ color: '#2BBFB3' }}>{members.length}</p>
-              <p className="text-xs" style={{ color: '#8a93a2' }}>Membres</p>
-            </div>
-            <div className="text-center px-4" style={{ borderLeft: '1px solid #f4f5f7' }}>
-              <p className="text-xl font-bold" style={{ color: '#1a2b4a' }}>{benefCount}</p>
-              <p className="text-xs" style={{ color: '#8a93a2' }}>Salariés</p>
-            </div>
-            <div className="text-center px-4" style={{ borderLeft: '1px solid #f4f5f7' }}>
-              <p className="text-xl font-bold" style={{ color: '#d97706' }}>{codesCount.total - codesCount.used}</p>
-              <p className="text-xs" style={{ color: '#8a93a2' }}>Codes dispo</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats rapides */}
+      {/* Stats équipe */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        {[
-          { label: 'Membres actifs', value: activeMembers.length, color: '#2BBFB3' },
-          { label: 'Invitations', value: pendingMembers.length, color: '#d97706' },
-          { label: 'Administrateurs', value: members.filter(m => m.role === 'admin').length, color: '#1a2b4a' },
-          { label: 'Membres', value: members.filter(m => m.role === 'member').length, color: '#8a93a2' },
-        ].map(s => (
-          <div key={s.label} className="bg-white rounded-2xl p-4" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-            <p className="text-xl font-bold mb-1" style={{ color: s.color }}>{s.value}</p>
-            <p className="text-xs" style={{ color: '#8a93a2' }}>{s.label}</p>
-          </div>
-        ))}
+        <MetricCard label="Membres actifs" value={activeMembers.length} color="#2BBFB3" />
+        <MetricCard label="Invitations en attente" value={pendingMembers.length} color={pendingMembers.length > 0 ? '#d97706' : '#8a93a2'} />
+        <MetricCard label="Administrateurs" value={members.filter(m => m.role === 'admin').length} color="#1a2b4a" />
+        <MetricCard label="Membres" value={members.filter(m => m.role === 'member').length} color="#8a93a2" />
       </div>
 
       {/* Bouton inviter (admin uniquement) */}
@@ -237,8 +195,7 @@ export default function PartnerTeam({ partnerId }) {
                       {isCurrentUser && <span className="text-xs ml-2" style={{ color: '#8a93a2' }}>(vous)</span>}
                     </p>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs px-2 py-0.5 rounded-lg font-medium"
-                        style={{ backgroundColor: r.bg, color: r.text }}>{r.label}</span>
+                      <StatusBadge label={r.label} bg={r.bg} color={r.text} size="sm" />
                       {member.invited_by && (
                         <span className="text-xs" style={{ color: '#8a93a2' }}>
                           Invité par {member.invited_by === user.email ? 'vous' : member.invited_by}
@@ -292,8 +249,7 @@ export default function PartnerTeam({ partnerId }) {
                     <div className="min-w-0">
                       <p className="font-semibold text-sm truncate" style={{ color: '#1a2b4a' }}>{member.user_email}</p>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs px-2 py-0.5 rounded-lg font-medium"
-                          style={{ backgroundColor: '#fef3c7', color: '#d97706' }}>En attente</span>
+                        <StatusBadge label="En attente" bg="#fef3c7" color="#d97706" size="sm" />
                         <span className="text-xs" style={{ color: '#8a93a2' }}>
                           {roleLabels[member.role]?.label || 'Membre'}
                         </span>

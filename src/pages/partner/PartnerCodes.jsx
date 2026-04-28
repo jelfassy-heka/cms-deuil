@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import xano from '../../lib/xano'
-import { Toast, useToast, ConfirmModal, useConfirm, SearchInput, CopyButton, SkeletonStats, SkeletonList, useDebounce, EmptyState, exportToCSV } from '../../components/SharedUI'
+import { Toast, useToast, ConfirmModal, useConfirm, SearchInput, CopyButton, SkeletonStats, SkeletonList, useDebounce, EmptyState, exportToCSV, MetricCard, StatusBadge } from '../../components/SharedUI'
+
+// Masque un code en ne laissant visibles que les 3 derniers caractères
+const maskCode = (code) => {
+  if (!code) return ''
+  if (code.length <= 4) return code
+  return '••••' + code.slice(-3)
+}
 
 const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
 
@@ -323,9 +330,10 @@ export default function PartnerCodes({ partnerId }) {
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        {[{l:'Disponibles',v:availableCodes.length,c:'#2BBFB3'},{l:'Envoyés',v:sentCount,c:'#1a2b4a'},{l:'Salariés',v:beneficiaries.length,c:'#d97706'},{l:'Utilisation',v:`${usageRate}%`,c:usageRate>80?'#ef4444':'#8a93a2'}].map(s=>(
-          <div key={s.l} className="bg-white rounded-2xl p-4" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}><p className="text-xl font-bold mb-1" style={{color:s.c}}>{s.v}</p><p className="text-xs" style={{color:'#8a93a2'}}>{s.l}</p></div>
-        ))}
+        <MetricCard label="Disponibles" value={availableCodes.length} color="#2BBFB3" />
+        <MetricCard label="Envoyés" value={sentCount} color="#3b82f6" />
+        <MetricCard label="Salariés" value={beneficiaries.length} color="#1a2b4a" />
+        <MetricCard label="Activation" value={`${usageRate}%`} color={usageRate>80?'#ef4444':'#8a93a2'} />
       </div>
 
       {/* Progress bar */}
@@ -451,11 +459,7 @@ export default function PartnerCodes({ partnerId }) {
                   </div>
 
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {/* Funnel status badge */}
-                    <span className="text-xs px-2 py-1 rounded-lg font-medium"
-                      style={{backgroundColor: status.bg, color: status.color}}>
-                      {status.label}
-                    </span>
+                    <StatusBadge label={status.label} bg={status.bg} color={status.color} />
                     {!hasSent && !batchMode && (
                       <button onClick={()=>{setSendingTo(isSending?null:b.id);setSendingCode('')}} className="px-3 py-1.5 rounded-xl text-white text-xs font-medium" style={{backgroundColor:'#2BBFB3'}}>Envoyer</button>
                     )}
@@ -467,7 +471,7 @@ export default function PartnerCodes({ partnerId }) {
                   <div className="flex items-center gap-2 mt-2 pt-2" style={{borderTop:'1px solid #f4f5f7'}}>
                     <div className="w-1.5 h-1.5 rounded-full" style={{backgroundColor: status.color}} />
                     <p className="text-xs flex-1" style={{color:'#8a93a2'}}>
-                      Code <span style={{fontFamily:'monospace',color:'#1a2b4a'}}>{b.code}</span>
+                      Code <span style={{fontFamily:'monospace',color:'#8a93a2'}}>{maskCode(b.code)}</span>
                       {b.sent_at&&` · envoyé le ${new Date(b.sent_at).toLocaleDateString('fr-FR')}`}
                     </p>
                     <CopyButton text={b.code} />
@@ -507,8 +511,8 @@ export default function PartnerCodes({ partnerId }) {
               const assignedTo=beneficiaries.find(b=>b.code===c.code)
               return (
                 <div key={c.id} className="grid grid-cols-4 px-4 py-3 items-center" style={{borderTop:i>0?'0.5px solid #f4f5f7':'none'}}>
-                  <span style={{fontFamily:'monospace',fontSize:'14px',fontWeight:'600',color:c.used?'#8a93a2':'#2BBFB3',letterSpacing:'2px',textDecoration:c.used?'line-through':'none'}}>{c.code}</span>
-                  <span className="text-xs px-2 py-1 rounded-lg font-medium w-fit" style={{backgroundColor:c.used?'#fee2e2':(assignedTo?'#e8f0fe':'#e8f8f7'),color:c.used?'#ef4444':(assignedTo?'#1a2b4a':'#2BBFB3')}}>{c.used?'Utilisé':(assignedTo?'Envoyé':'Dispo')}</span>
+                  <span style={{fontFamily:'monospace',fontSize:'13px',color:'#8a93a2',textDecoration:c.used?'line-through':'none'}}>{maskCode(c.code)}</span>
+                  <StatusBadge label={c.used?'Activé':(assignedTo?'Envoyé':'Disponible')} bg={c.used?'#e8f0fe':(assignedTo?'#dbeafe':'#e8f8f7')} color={c.used?'#1a2b4a':(assignedTo?'#3b82f6':'#2BBFB3')} />
                   <span className="text-xs truncate" style={{color:'#8a93a2'}}>{assignedTo?`${assignedTo.first_name} ${assignedTo.last_name}`:'—'}</span>
                   <CopyButton text={c.code} />
                 </div>

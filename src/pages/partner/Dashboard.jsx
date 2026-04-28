@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, Tooltip } from 'recharts'
 import xano from '../../lib/xano'
+import { MetricCard } from '../../components/SharedUI'
 import PartnerCodes from './PartnerCodes'
 import PartnerTeam from './PartnerTeam'
 import PartnerProfile from './PartnerProfile'
 import PartnerHelp from './PartnerHelp'
-import PartnerNotifications from './PartnerNotifications'
+import PartnerNotifications, { computePartnerNotifications } from './PartnerNotifications'
 
 const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
 const ADMIN_EMAIL = 'jelfassy@heka-app.fr'
@@ -183,21 +184,39 @@ function PartnerNavIcon({ icon, active }) {
   }
 }
 
+// Mapping URL → identifiant de page (utilisé pour la sidebar et le rendu)
+const ROUTE_TO_PAGE = {
+  '': 'dashboard',
+  'codes': 'codes',
+  'team': 'team',
+  'contract': 'contract',
+  'requests': 'requests',
+  'profile': 'profile',
+  'help': 'help',
+  'notifications': 'notifications',
+}
+
 export default function PartnerDashboard() {
   const { user, partnerId, memberRole, signOut } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [codes, setCodes] = useState([])
   const [contract, setContract] = useState(null)
   const [requests, setRequests] = useState([])
   const [beneficiaries, setBeneficiaries] = useState([])
   const [partnerInfo, setPartnerInfo] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [activePage, setActivePage] = useState('dashboard')
   const [activeRequestType, setActiveRequestType] = useState(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [isMobile, setIsMobile] = useState(false)
   const [toast, setToast] = useState(null)
+
+  const activePage = useMemo(() => {
+    const seg = location.pathname.replace(/^\/partner\/?/, '').split('/')[0]
+    return ROUTE_TO_PAGE[seg] || 'dashboard'
+  }, [location.pathname])
+  const isNewRequestRoute = location.pathname === '/partner/requests/new'
 
   useEffect(() => {
     if (!toast) return
@@ -226,7 +245,22 @@ export default function PartnerDashboard() {
   }, [user, partnerId])
 
   const handleSignOut = async () => { await signOut(); navigate('/login') }
-  const handleNavClick = path => { setActivePage(path); setActiveRequestType(null); if(isMobile) setMobileMenuOpen(false) }
+  const handleNavClick = path => {
+    const target = path === 'dashboard' ? '/partner' : `/partner/${path}`
+    navigate(target)
+    setActiveRequestType(null)
+    if (isMobile) setMobileMenuOpen(false)
+  }
+
+  // Synchronise l'URL avec l'état du flux nouvelle demande
+  useEffect(() => {
+    if (isNewRequestRoute) {
+      // entrée sur /partner/requests/new sans type pré-sélectionné
+      setActiveRequestType(prev => prev || 'choose')
+    } else if (location.pathname === '/partner/requests' || location.pathname === '/partner/requests/') {
+      setActiveRequestType(null)
+    }
+  }, [isNewRequestRoute, location.pathname])
 
   const handleRequest = async formData => {
     try {
@@ -258,7 +292,9 @@ export default function PartnerDashboard() {
         LINK_CMS: 'https://cms-deuil.vercel.app',
       })
 
-      setRequests([created, ...requests]); setActiveRequestType(null); setActivePage('requests')
+      setRequests([created, ...requests])
+      setActiveRequestType(null)
+      navigate('/partner/requests')
 
       if (reqType?.isCalendar) {
         setToast('Rendez-vous confirmé ! Un email de confirmation vous a été envoyé.')
@@ -267,9 +303,15 @@ export default function PartnerDashboard() {
   }
 
   const usedCodes = codes.filter(c => c.used).length
-  const unusedCodes = codes.length - usedCodes
-  const usageRate = codes.length > 0 ? Math.round((usedCodes / codes.length) * 100) : 0
+  const activationRate = codes.length > 0 ? Math.round((usedCodes / codes.length) * 100) : 0
   const partnerName = partnerInfo?.name || 'Espace partenaire'
+
+  // ─── KPI cockpit (données réellement disponibles) ─
+  const assignedSet = new Set(beneficiaries.filter(b => b.code).map(b => b.code))
+  const availableCodesCount = codes.filter(c => !c.used && !assignedSet.has(c.code)).length
+  const sentCodesCount = codes.filter(c => !c.used && assignedSet.has(c.code)).length
+  const benefWithoutCode = beneficiaries.filter(b => !b.code).length
+  const openRequests = requests.filter(r => r.request_status === 'pending' || r.request_status === 'in_progress').length
 
   // Données pour le graphique courbe (envois par semaine sur 12 semaines)
   const sendChartData = useMemo(() => {
@@ -289,13 +331,13 @@ export default function PartnerDashboard() {
 
   // Données pour le donut (répartition codes)
   const donutData = useMemo(() => {
-    const assignedSet = new Set(beneficiaries.filter(b => b.code).map(b => b.code))
-    const sent = codes.filter(c => !c.used && assignedSet.has(c.code)).length
+    const aSet = new Set(beneficiaries.filter(b => b.code).map(b => b.code))
+    const sent = codes.filter(c => !c.used && aSet.has(c.code)).length
     const available = codes.length - usedCodes - sent
     return [
       { name: 'Disponibles', value: available, color: '#2BBFB3' },
       { name: 'Envoyés', value: sent, color: '#3b82f6' },
-      { name: 'Utilisés', value: usedCodes, color: '#d1d5db' },
+      { name: 'Activés', value: usedCodes, color: '#1a2b4a' },
     ]
   }, [codes, beneficiaries, usedCodes])
 
@@ -496,51 +538,49 @@ export default function PartnerDashboard() {
               <h1 className="text-xl md:text-2xl font-bold" style={{color:'#1a2b4a'}}>Bonjour 👋</h1>
               <p className="text-sm mt-1" style={{color:'#8a93a2'}}>
                 Bienvenue sur l'espace <strong style={{color:'#2BBFB3'}}>{partnerName}</strong>
-                {user.email && <span> — connecté en tant que {user.email}</span>}
               </p>
             </div>
 
-            {/* Partner info card */}
-            <div className="bg-white rounded-2xl p-5 mb-6 flex flex-col sm:flex-row sm:items-center gap-4"
-              style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white text-xl font-bold flex-shrink-0"
-                style={{backgroundColor:'#2BBFB3'}}>
-                {partnerName[0]}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-lg font-bold" style={{color:'#1a2b4a'}}>{partnerName}</p>
-                <p className="text-sm" style={{color:'#8a93a2'}}>
-                  {partnerInfo?.partner_type || 'entreprise'}
-                  {partnerInfo?.email_contact && <span> · {partnerInfo.email_contact}</span>}
-                </p>
-              </div>
-              <div className="flex gap-4">
-                <div className="text-center">
-                  <p className="text-xl font-bold" style={{color:'#2BBFB3'}}>{codes.length}</p>
-                  <p className="text-xs" style={{color:'#8a93a2'}}>Codes</p>
-                </div>
-                <div className="text-center" style={{borderLeft:'1px solid #f4f5f7', paddingLeft:'16px'}}>
-                  <p className="text-xl font-bold" style={{color:'#1a2b4a'}}>{unusedCodes}</p>
-                  <p className="text-xs" style={{color:'#8a93a2'}}>Codes dispo</p>
-                </div>
-                <div className="text-center" style={{borderLeft:'1px solid #f4f5f7', paddingLeft:'16px'}}>
-                  <p className="text-xl font-bold" style={{color:usageRate>80?'#ef4444':'#2BBFB3'}}>{usageRate}%</p>
-                  <p className="text-xs" style={{color:'#8a93a2'}}>Utilisation</p>
-                </div>
-              </div>
+            {/* KPI cockpit */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+              <MetricCard label="Codes disponibles" value={availableCodesCount} color="#2BBFB3" />
+              <MetricCard label="Codes envoyés" value={sentCodesCount} color="#3b82f6" />
+              <MetricCard label="Codes activés" value={usedCodes} color="#1a2b4a" sublabel={codes.length > 0 ? `${activationRate}% du total` : undefined} />
+              <MetricCard label="Demandes ouvertes" value={openRequests} color={openRequests > 0 ? '#d97706' : '#8a93a2'} />
             </div>
 
-            {/* Progress bar */}
-            <div className="bg-white rounded-2xl p-5 mb-6" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
-              <div className="flex items-center justify-between mb-3">
-                <p className="font-semibold" style={{color:'#1a2b4a'}}>Utilisation des codes</p>
-                <span className="text-sm font-semibold" style={{color:usageRate>80?'#ef4444':'#2BBFB3'}}>{usageRate}%</span>
+            {/* À faire maintenant */}
+            {(benefWithoutCode > 0 || openRequests > 0 || activationRate > 80) && (
+              <div className="bg-white rounded-2xl p-5 mb-6" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
+                <p className="font-bold text-base mb-3" style={{color:'#1a2b4a'}}>À faire maintenant</p>
+                <div className="flex flex-col gap-2">
+                  {benefWithoutCode > 0 && (
+                    <button onClick={()=>handleNavClick('codes')} className="flex items-center justify-between px-4 py-3 rounded-xl text-left transition-all hover:translate-x-0.5" style={{backgroundColor:'#f4f5f7'}}>
+                      <span className="text-sm" style={{color:'#1a2b4a'}}>
+                        <strong>{benefWithoutCode}</strong> salarié{benefWithoutCode>1?'s':''} sans code
+                      </span>
+                      <span className="text-sm font-semibold" style={{color:'#2BBFB3'}}>Envoyer →</span>
+                    </button>
+                  )}
+                  {openRequests > 0 && (
+                    <button onClick={()=>handleNavClick('requests')} className="flex items-center justify-between px-4 py-3 rounded-xl text-left transition-all hover:translate-x-0.5" style={{backgroundColor:'#f4f5f7'}}>
+                      <span className="text-sm" style={{color:'#1a2b4a'}}>
+                        <strong>{openRequests}</strong> demande{openRequests>1?'s':''} en cours
+                      </span>
+                      <span className="text-sm font-semibold" style={{color:'#d97706'}}>Suivre →</span>
+                    </button>
+                  )}
+                  {activationRate > 80 && (
+                    <button onClick={()=>{setActiveRequestType(requestTypes[0]);navigate('/partner/requests/new')}} className="flex items-center justify-between px-4 py-3 rounded-xl text-left transition-all hover:translate-x-0.5" style={{backgroundColor:'#fee2e2'}}>
+                      <span className="text-sm" style={{color:'#1a2b4a'}}>
+                        <strong>{activationRate}%</strong> des codes activés — pensez à en demander
+                      </span>
+                      <span className="text-sm font-semibold" style={{color:'#ef4444'}}>Demander →</span>
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="w-full rounded-full h-3" style={{backgroundColor:'#f4f5f7'}}>
-                <div className="h-3 rounded-full" style={{width:`${usageRate}%`,backgroundColor:usageRate>80?'#ef4444':'#2BBFB3'}} />
-              </div>
-              {usageRate > 80 && <p className="text-sm mt-3" style={{color:'#ef4444'}}>⚠️ Vous approchez de la limite — pensez à demander de nouveaux codes</p>}
-            </div>
+            )}
 
             {/* ─── Graphiques ─── */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -590,7 +630,7 @@ export default function PartnerDashboard() {
             {/* Quick actions */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {requestTypes.slice(0,4).map(t=>(
-                <button key={t.type} onClick={()=>{setActivePage('requests');setActiveRequestType(t)}}
+                <button key={t.type} onClick={()=>{setActiveRequestType(t);navigate('/partner/requests/new')}}
                   className="bg-white rounded-2xl p-4 text-left transition-all hover:shadow-md group"
                   style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
                   <div className="flex items-center gap-3">
@@ -619,7 +659,7 @@ export default function PartnerDashboard() {
             {contract ? (
               <div className="bg-white rounded-2xl p-5 md:p-8" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">{[{l:'Statut',v:contract.contract_status},{l:'Début',v:new Date(contract.start_date).toLocaleDateString('fr-FR')},{l:'Fin',v:new Date(contract.end_date).toLocaleDateString('fr-FR')},{l:'Renouvellement auto',v:contract.auto_renewal?'Activé':'Désactivé'},{l:'Codes inclus',v:contract.max_codes},{l:'Tarif',v:`${contract.price}€`}].map(i=><div key={i.l}><p className="text-xs font-semibold mb-1" style={{color:'#8a93a2'}}>{i.l.toUpperCase()}</p><p className="font-semibold" style={{color:'#1a2b4a'}}>{i.v}</p></div>)}</div>
-                <div className="flex flex-col sm:flex-row gap-3 mt-6">{contract.document_url&&<a href={contract.document_url} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor:'#2BBFB3'}}>📄 Télécharger</a>}<button onClick={()=>{setActivePage('requests');setActiveRequestType(requestTypes[4])}} className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-sm font-semibold" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}}>🔄 Renouvellement</button></div>
+                <div className="flex flex-col sm:flex-row gap-3 mt-6">{contract.document_url&&<a href={contract.document_url} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor:'#2BBFB3'}}>📄 Télécharger</a>}<button onClick={()=>{setActiveRequestType(requestTypes[4]);navigate('/partner/requests/new')}} className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-sm font-semibold" style={{backgroundColor:'#f4f5f7',color:'#1a2b4a'}}>🔄 Renouvellement</button></div>
               </div>
             ) : <div className="bg-white rounded-3xl p-12 text-center" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}><span className="text-4xl">📄</span><p className="font-semibold mt-4" style={{color:'#1a2b4a'}}>Aucun contrat</p></div>}
           </div>
@@ -633,7 +673,7 @@ export default function PartnerDashboard() {
                 <p className="text-sm mt-1" style={{color:'#8a93a2'}}>{requests.length} demande{requests.length > 1 ? 's' : ''}</p>
               </div>
               {!activeRequestType && (
-                <button onClick={()=>setActiveRequestType('choose')} className="px-5 py-3 rounded-2xl text-white text-sm font-semibold w-full sm:w-auto" style={{backgroundColor:'#2BBFB3'}}>+ Nouvelle demande</button>
+                <button onClick={()=>navigate('/partner/requests/new')} className="px-5 py-3 rounded-2xl text-white text-sm font-semibold w-full sm:w-auto" style={{backgroundColor:'#2BBFB3'}}>+ Nouvelle demande</button>
               )}
             </div>
 
@@ -642,7 +682,7 @@ export default function PartnerDashboard() {
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-4">
                   <p className="text-sm font-semibold" style={{color:'#1a2b4a'}}>Quel type de demande souhaitez-vous faire ?</p>
-                  <button onClick={()=>setActiveRequestType(null)} className="text-xs font-medium px-3 py-1.5 rounded-lg" style={{backgroundColor:'#f4f5f7',color:'#8a93a2'}}>Annuler</button>
+                  <button onClick={()=>navigate('/partner/requests')} className="text-xs font-medium px-3 py-1.5 rounded-lg" style={{backgroundColor:'#f4f5f7',color:'#8a93a2'}}>Annuler</button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {requestTypes.map(t=>(
@@ -669,7 +709,7 @@ export default function PartnerDashboard() {
             {/* Formulaire de demande */}
             {activeRequestType && activeRequestType !== 'choose' && (
               <div className="mb-6">
-                <RequestForm type={activeRequestType} onSubmit={handleRequest} onCancel={()=>setActiveRequestType(null)} />
+                <RequestForm type={activeRequestType} onSubmit={handleRequest} onCancel={()=>navigate('/partner/requests')} />
               </div>
             )}
 
@@ -679,7 +719,7 @@ export default function PartnerDashboard() {
                 <span className="text-4xl">📋</span>
                 <p className="font-semibold mt-4" style={{color:'#1a2b4a'}}>Aucune demande</p>
                 <p className="text-sm mt-1 mb-4" style={{color:'#8a93a2'}}>Faites votre première demande pour commencer</p>
-                <button onClick={()=>setActiveRequestType('choose')} className="px-5 py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor:'#2BBFB3'}}>+ Nouvelle demande</button>
+                <button onClick={()=>navigate('/partner/requests/new')} className="px-5 py-3 rounded-2xl text-white text-sm font-semibold" style={{backgroundColor:'#2BBFB3'}}>+ Nouvelle demande</button>
               </div>
             ) : requests.length > 0 && (
               <div className="flex flex-col gap-3">{requests.map(req=>{const t=requestTypes.find(x=>x.type===req.request_type)||requestTypes[0];const s=statusLabels[req.request_status]||statusLabels.pending;return(
@@ -700,6 +740,48 @@ export default function PartnerDashboard() {
                 </div>
               )})}</div>
             )}
+          </div>
+        )}
+
+        {activePage==='notifications'&&(
+          <div>
+            <div className="mb-6">
+              <h1 className="text-xl md:text-2xl font-bold" style={{color:'#1a2b4a'}}>Notifications</h1>
+              <p className="text-sm mt-1" style={{color:'#8a93a2'}}>Vos alertes et informations importantes</p>
+            </div>
+            {(() => {
+              const notifs = computePartnerNotifications(notifData)
+              if (notifs.length === 0) {
+                return (
+                  <div className="bg-white rounded-3xl p-10 text-center" style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
+                    <span className="text-4xl block mb-3">🔔</span>
+                    <p className="font-semibold mb-1" style={{color:'#1a2b4a'}}>Tout est en ordre</p>
+                    <p className="text-sm" style={{color:'#8a93a2'}}>Aucune notification pour le moment</p>
+                  </div>
+                )
+              }
+              return (
+                <div className="flex flex-col gap-3">
+                  {notifs.map(n => (
+                    <button key={n.id}
+                      onClick={() => n.action && handleNavClick(n.action)}
+                      className="bg-white rounded-2xl px-4 md:px-6 py-4 md:py-5 text-left transition-all hover:shadow-md"
+                      style={{boxShadow:'0 4px 24px rgba(43,191,179,0.06)'}}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{backgroundColor:n.bg}}>
+                          {n.icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-sm" style={{color:'#1a2b4a'}}>{n.label}</p>
+                          <p className="text-xs mt-0.5" style={{color:'#8a93a2'}}>{n.detail}</p>
+                        </div>
+                        {n.action && <span className="text-sm font-semibold flex-shrink-0" style={{color:n.color}}>→</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )
+            })()}
           </div>
         )}
       </div>
