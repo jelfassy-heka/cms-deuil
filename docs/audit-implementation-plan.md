@@ -139,3 +139,127 @@ L’erreur précédente semble donc être un incident local/transitoire npm ou r
   - règles React Hooks classiques ;
   - règle React Refresh en warning si le plugin est disponible ;
   - `no-unused-vars` conservé en erreur.
+
+  ## Lot 1 — Quick wins Partenaire P0
+
+### Statut
+
+Validé.
+
+### Objectif
+
+Corriger les irritants P0 de l’espace Partenaire sans refonte globale, sans modification backend et sans toucher à Cocon.
+
+### Validation locale
+
+- `npm run lint` : OK
+- `npm run build` : OK
+- `npm run dev` : OK
+
+### Tests fonctionnels réalisés
+
+- CTA Partenaire vérifiés.
+- Navigation vers les demandes/support vérifiée.
+- Filtres rapides PartnerCodes vérifiés si ajoutés.
+- Envoi unitaire / groupé vérifié selon le périmètre.
+- Confirmation PartnerTeam vérifiée si modifiée.
+- Responsive partenaire vérifié sur les écrans concernés.
+
+### Hors périmètre conservé
+
+- Pas de refonte dashboard.
+- Pas de routing profond.
+- Pas de data layer.
+- Pas de modification Cocon.
+- Pas de modification backend Xano.
+- Pas de modification `package.json` / `package-lock.json`.
+
+## Lot 2 — UI partenaire version actuelle
+
+### Statut
+
+Validé.
+
+### Objectif
+
+Améliorer l’UI/UX des écrans Partenaire avec les données actuellement disponibles, sans modification backend, sans routing profond et sans toucher à Cocon.
+
+### Validation locale
+
+- `npm run lint` : OK
+- `npm run build` : OK
+- `npm run dev` : OK
+
+### Tests fonctionnels réalisés
+
+Dashboard partenaire :
+- KPI principaux lisibles.
+- Actions prioritaires visibles.
+- Aucun chiffre inventé ou ambigu.
+- Responsive mobile vérifié.
+
+PartnerCodes :
+- Recherche OK.
+- Filtres OK.
+- Import CSV OK.
+- Export OK.
+- Envoi unitaire OK.
+- Envoi groupé OK.
+- Responsive mobile vérifié.
+
+PartnerTeam :
+- Membres visibles.
+- Invitations visibles.
+- Actions sensibles inchangées.
+- Responsive mobile vérifié.
+
+PartnerProfile :
+- Admin : édition OK.
+- Non-admin : lecture seule ou état verrouillé clair.
+- Responsive mobile vérifié.
+
+PartnerHelp :
+- FAQ lisible.
+- CTA support/demandes fonctionnels.
+- Responsive mobile vérifié.
+
+### Hors périmètre conservé
+
+- Pas de routing profond.
+- Pas de data layer.
+- Pas de modification backend Xano.
+- Pas de modification Cocon.
+- Pas de modification `package.json` / `package-lock.json`.
+- Pas de nouvelle dépendance.
+
+### Données non affichées faute de champs disponibles
+
+- Email ouvert / cliqué.
+- Date d’activation précise.
+- Relance recommandée calculée.
+- Adoption par département/service.
+- Cohortes d’envoi.
+
+## Contenu
+
+- Amélioration UI/UX des écrans Partenaire avec les données existantes.
+- Dashboard partenaire rendu plus actionnable.
+- PartnerCodes clarifié.
+- PartnerTeam recentré sur la gouvernance.
+- PartnerProfile clarifié selon rôle admin/non-admin.
+- PartnerHelp amélioré en support hub simple.
+
+## Validation
+
+- npm run lint : OK
+- npm run build : OK
+- npm run dev : OK
+
+## Hors périmètre
+
+- Pas de routing profond.
+- Pas de data layer.
+- Pas de modification backend Xano.
+- Cocon non modifié.
+- Pas de modification package.json / package-lock.json.
+- Pas de nouvelle dépendance.

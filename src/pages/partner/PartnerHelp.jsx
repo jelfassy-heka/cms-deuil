@@ -94,6 +94,13 @@ function AccordionItem({ question, answer }) {
   )
 }
 
+const SHORTCUTS = [
+  { path: 'codes', label: 'Mes codes', desc: 'Envoyer et suivre les codes', icon: '🔑', color: '#2BBFB3' },
+  { path: 'requests', label: 'Mes demandes', desc: 'Codes, RDV, assistance', icon: '📋', color: '#d97706' },
+  { path: 'team', label: 'Mon équipe', desc: 'Membres et invitations', icon: '👥', color: '#1a2b4a' },
+  { path: 'contract', label: 'Mon contrat', desc: 'Détails et documents', icon: '📄', color: '#8b5cf6' },
+]
+
 export default function PartnerHelp({ onNavigate }) {
   return (
     <div>
@@ -101,6 +108,26 @@ export default function PartnerHelp({ onNavigate }) {
         <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Centre d'aide</h1>
         <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>Tout ce que vous devez savoir pour utiliser votre espace</p>
       </div>
+
+      {/* Raccourcis */}
+      {onNavigate && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          {SHORTCUTS.map(s => (
+            <button key={s.path}
+              onClick={() => onNavigate(s.path)}
+              className="bg-white rounded-2xl p-4 text-left transition-all hover:shadow-md group"
+              style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110" style={{ backgroundColor: s.color + '15' }}>
+                  <span className="text-lg">{s.icon}</span>
+                </div>
+              </div>
+              <p className="text-sm font-semibold" style={{ color: '#1a2b4a' }}>{s.label}</p>
+              <p className="text-xs mt-0.5" style={{ color: '#8a93a2' }}>{s.desc}</p>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Guide de prise en main */}
       <div className="bg-white rounded-2xl p-5 md:p-6 mb-6" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
