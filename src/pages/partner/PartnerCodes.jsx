@@ -178,7 +178,7 @@ export default function PartnerCodes({ partnerId }) {
           xano.getAll('beneficiaries', { partner_id: partnerId }),
         ])
         setCodes(codesData); setBeneficiaries(benefData)
-        try { const p = await xano.getOne('partners', partnerId); setPartnerName(p.name) } catch(e){}
+        try { const p = await xano.getOne('partners', partnerId); setPartnerName(p.name) } catch { /* nom partenaire optionnel */ }
       } catch (err) { console.error(err) } finally { setLoading(false) }
     }
     if (partnerId) fetchData()
@@ -281,7 +281,7 @@ export default function PartnerCodes({ partnerId }) {
 
         setBeneficiaries(prev => prev.map(b => b.id === benef.id ? { ...b, code: code.code, status: 'sent', sent_at: new Date().toISOString() } : b))
         log.push({ name: `${benef.first_name} ${benef.last_name}`, status: 'success' })
-      } catch (err) {
+      } catch {
         log.push({ name: `${benef.first_name} ${benef.last_name}`, status: 'error' })
       }
       setBatchProgress({ current: i + 1, total, log: [...log] })

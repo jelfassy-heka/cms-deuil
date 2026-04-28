@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { timeAgo } from '../../components/SharedUI'
 
 // ─── Règles de notification ───────────────────────
 function computeNotifications(datasets) {

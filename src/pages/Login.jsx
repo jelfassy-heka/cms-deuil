@@ -71,7 +71,7 @@ export default function Login() {
     if (!forgotEmail) { setForgotError('Veuillez saisir votre adresse email'); return }
     setForgotLoading(true); setForgotError('')
     try {
-      const resp = await fetch(`${XANO_BASE}/forgot-password`, {
+      await fetch(`${XANO_BASE}/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: forgotEmail }),

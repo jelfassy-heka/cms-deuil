@@ -19,11 +19,6 @@ const roleLabels = {
   member: { label: 'Membre', bg: '#f4f5f7', text: '#8a93a2' },
 }
 
-const statusLabels = {
-  active: { label: 'Actif', bg: '#e8f8f7', text: '#2BBFB3' },
-  pending: { label: 'Invitation envoyée', bg: '#fef3c7', text: '#d97706' },
-}
-
 export default function PartnerTeam({ partnerId }) {
   const { user, memberRole } = useAuth()
   const [members, setMembers] = useState([])
