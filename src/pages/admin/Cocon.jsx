@@ -442,6 +442,33 @@ export default function Cocon() {
     }
   }
 
+  // Dérive le thème et la séance actuellement actifs à partir du drawer ouvert.
+  // Cela permet de surbrillé la carte/le panneau/la séance correspondants même
+  // quand le panneau du thème est fermé (ex : drawer Cut sans accordéon ouvert).
+  // Doit rester avant les early returns conditionnels (rules-of-hooks).
+  const { activeSubjectId, activeSessionId } = useMemo(() => {
+    if (!drawerState) return { activeSubjectId: null, activeSessionId: null }
+    switch (drawerState.mode) {
+      case 'edit-subject':
+        return { activeSubjectId: drawerState.data?.id ?? null, activeSessionId: null }
+      case 'create-session':
+        return { activeSubjectId: drawerState.subjectId ?? null, activeSessionId: null }
+      case 'edit-session':
+        return {
+          activeSubjectId: drawerState.data?.sessionSubjectId ?? null,
+          activeSessionId: drawerState.data?.id ?? null,
+        }
+      case 'create-cut':
+      case 'edit-cut':
+        return {
+          activeSubjectId: drawerState.parentSession?.sessionSubjectId ?? null,
+          activeSessionId: drawerState.parentSession?.id ?? null,
+        }
+      default:
+        return { activeSubjectId: null, activeSessionId: null }
+    }
+  }, [drawerState])
+
   if (loading) {
     return (
       <div>
@@ -453,6 +480,8 @@ export default function Cocon() {
 
   const blockProps = {
     openSubjectIds,
+    activeSubjectId,
+    activeSessionId,
     onToggleSubject: toggleSubject,
     videos,
     sessions,
@@ -472,7 +501,8 @@ export default function Cocon() {
         .session-row { transition: transform 0.1s ease-out, background 0.15s; }
         .session-row:hover { background: #f4f5f7; }
         .session-row:active { transform: scale(0.998); }
-        .session-row:hover .session-row-delete { opacity: 1; }
+        .session-row:hover .session-row-delete,
+        .session-row-active:hover .session-row-delete { opacity: 1; }
       `}</style>
       <Toast toast={toast} onClose={clearToast} />
 
@@ -562,7 +592,7 @@ export default function Cocon() {
 
 // ─── SubjectBlock ─────────────────────────────────
 function SubjectBlock({
-  blockKey, blockTitle, subjects, openSubjectIds, onToggleSubject,
+  blockKey, blockTitle, subjects, openSubjectIds, activeSubjectId, activeSessionId, onToggleSubject,
   videos, sessions, onEditSubject, onCreateSubjectPrefilled,
   onCreateSession, onEditSession, onDeleteSession,
 }) {
@@ -617,6 +647,7 @@ function SubjectBlock({
             subject={subject}
             displayNumber={idx + 1}
             isOpen={openSubjectIds.has(subject.id)}
+            isActive={activeSubjectId === subject.id}
             sessionCount={sessions.filter(s => s.sessionSubjectId === subject.id).length}
             onClick={() => onToggleSubject(subject.id)}
             onEdit={() => onEditSubject(subject)}
@@ -630,6 +661,7 @@ function SubjectBlock({
           subject={subject}
           displayNumber={subjects.findIndex(s => s.id === subject.id) + 1}
           blockTitle={blockTitle}
+          activeSessionId={activeSessionId}
           sessions={sessions
             .filter(s => s.sessionSubjectId === subject.id)
             .sort((a, b) => (a.position || 0) - (b.position || 0) || a.id - b.id)}
@@ -660,16 +692,20 @@ function BlockHeader({ title, count }) {
 }
 
 // ─── SubjectCard ──────────────────────────────────
-function SubjectCard({ subject, displayNumber, isOpen, sessionCount, onClick, onEdit }) {
-  const accentColor = subject.backgroundColor || '#888780'
+function SubjectCard({ subject, displayNumber, isOpen, isActive, sessionCount, onClick, onEdit }) {
+  const accentColor = getThemeAccentColor(subject)
+  const isSelected = isOpen || isActive
 
   const cardStyle = {
-    background: isOpen ? hexToRgba(accentColor, 0.18) : 'white',
+    background: isSelected ? hexToRgba(accentColor, 0.14) : 'white',
     borderRadius: 12,
-    padding: '12px 14px 12px 18px',
-    border: isOpen
-      ? `1.5px solid ${accentColor}`
-      : '0.5px solid #eef0f2',
+    padding: '12px 14px 12px 20px',
+    border: isSelected
+      ? `2px solid ${accentColor}`
+      : `1px solid rgba(138, 147, 162, 0.18)`,
+    boxShadow: isSelected
+      ? `0 4px 14px ${hexToRgba(accentColor, 0.20)}`
+      : '0 1px 2px rgba(26, 43, 74, 0.04)',
     cursor: 'pointer',
     minHeight: 92,
     display: 'flex',
@@ -683,13 +719,15 @@ function SubjectCard({ subject, displayNumber, isOpen, sessionCount, onClick, on
   return (
     <div className="subject-card" style={cardStyle} onClick={onClick}>
 
+      {/* Bande latérale colorée — toujours visible, plus large quand sélectionné */}
       <div style={{
         position: 'absolute',
         top: 0,
         left: 0,
         bottom: 0,
-        width: 5,
+        width: isSelected ? 7 : 5,
         background: accentColor,
+        transition: 'width 0.15s ease-out',
       }} />
 
       <p style={{ fontSize: 11, color: '#8a93a2', margin: '0 0 4px 0' }}>
@@ -697,7 +735,7 @@ function SubjectCard({ subject, displayNumber, isOpen, sessionCount, onClick, on
       </p>
       <p style={{
         fontSize: 13,
-        fontWeight: 500,
+        fontWeight: isSelected ? 700 : 500,
         color: '#1a2b4a',
         margin: 0,
         lineHeight: 1.3,
@@ -754,19 +792,21 @@ function SubjectCard({ subject, displayNumber, isOpen, sessionCount, onClick, on
 
 // ─── SubjectPanel ─────────────────────────────────
 function SubjectPanel({
-  subject, displayNumber, blockTitle, sessions, videos,
+  subject, displayNumber, blockTitle, sessions, videos, activeSessionId,
   onCreateSession, onEditSession, onDeleteSession,
 }) {
-  const accentColor = subject.backgroundColor || '#888780'
+  const accentColor = getThemeAccentColor(subject)
 
   return (
     <div
       id={`panel-subject-${subject.id}`}
       style={{
-        background: 'white',
+        background: `linear-gradient(90deg, ${hexToRgba(accentColor, 0.05)} 0%, rgba(255,255,255,0) 32%)`,
+        backgroundColor: 'white',
         borderRadius: 12,
-        border: '0.5px solid #eef0f2',
-        borderTop: `3px solid ${accentColor}`,
+        border: `1.5px solid ${hexToRgba(accentColor, 0.40)}`,
+        borderTop: `4px solid ${accentColor}`,
+        boxShadow: `0 6px 18px ${hexToRgba(accentColor, 0.10)}`,
         padding: 16,
         marginBottom: 14,
       }}>
@@ -814,6 +854,8 @@ function SubjectPanel({
               key={session.id}
               session={session}
               cutsCount={videos.filter(v => v.sessionId === session.id).length}
+              themeColor={accentColor}
+              isActive={activeSessionId === session.id}
               onEdit={() => onEditSession(session)}
               onDelete={() => onDeleteSession(session)}
             />
@@ -825,7 +867,7 @@ function SubjectPanel({
 }
 
 // ─── SessionRow ───────────────────────────────────
-function SessionRow({ session, cutsCount, onEdit, onDelete }) {
+function SessionRow({ session, cutsCount, themeColor, isActive, onEdit, onDelete }) {
   const statusConfig = {
     published: { bg: '#e8f8f7', color: '#2BBFB3', label: 'Published' },
     review: { bg: '#FAEEDA', color: '#BA7517', label: 'Review' },
@@ -834,35 +876,69 @@ function SessionRow({ session, cutsCount, onEdit, onDelete }) {
   const status = statusConfig[session.status] || statusConfig.draft
 
   const thumbnailUrl = session.thumbNail?.url || null
+  const accent = themeColor || DEFAULT_ACCENT
+
+  // Note : on n'utilise pas la classe .session-row CSS pour les séances actives
+  // afin que le hover ne vienne pas écraser la teinte d'état actif.
+  const rowStyle = isActive
+    ? {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        background: hexToRgba(accent, 0.12),
+        border: `2px solid ${accent}`,
+        borderRadius: 10,
+        padding: '10px 12px 10px 16px',
+        cursor: 'pointer',
+        position: 'relative',
+        boxShadow: `0 2px 8px ${hexToRgba(accent, 0.18)}`,
+        transition: 'background 0.15s, transform 0.1s ease-out',
+      }
+    : {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        background: 'white',
+        border: '1px solid rgba(138, 147, 162, 0.18)',
+        borderRadius: 10,
+        padding: '10px 12px 10px 16px',
+        cursor: 'pointer',
+        position: 'relative',
+        boxShadow: '0 1px 2px rgba(26, 43, 74, 0.03)',
+      }
 
   return (
     <div
       onClick={onEdit}
-      className="session-row"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        background: '#fafbfc',
-        border: '0.5px solid #eef0f2',
-        borderRadius: 10,
-        padding: '10px 12px',
-        cursor: 'pointer',
-        position: 'relative',
-      }}>
+      className={isActive ? 'session-row-active' : 'session-row'}
+      style={rowStyle}>
+
+      {/* Bande latérale gauche colorée — pleine si active, discrète sinon */}
+      <div style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        bottom: 0,
+        width: isActive ? 6 : 4,
+        background: isActive ? accent : hexToRgba(accent, 0.40),
+        borderTopLeftRadius: 10,
+        borderBottomLeftRadius: 10,
+      }} />
 
       <div style={{
         width: 84,
         height: 36,
         borderRadius: 6,
         flexShrink: 0,
-        background: thumbnailUrl ? `url(${thumbnailUrl}) center/cover no-repeat` : '#f0f1f3',
+        background: thumbnailUrl
+          ? `url(${thumbnailUrl}) center/cover no-repeat`
+          : hexToRgba(accent, 0.10),
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
       }}>
         {!thumbnailUrl && (
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#b4b8bf" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={hexToRgba(accent, 0.55)} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2"/>
             <circle cx="9" cy="9" r="2"/>
             <path d="M21 15l-5-5L5 21"/>
@@ -871,7 +947,7 @@ function SessionRow({ session, cutsCount, onEdit, onDelete }) {
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 13, fontWeight: 500, color: '#1a2b4a', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <p style={{ fontSize: 13, fontWeight: isActive ? 700 : 500, color: '#1a2b4a', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {session.title}
         </p>
         <p style={{ fontSize: 11, color: '#8a93a2', margin: 0 }}>
@@ -1513,19 +1589,42 @@ function useFileDrop(onFileDropped) {
   }
 }
 
-// ─── hexToRgba helper ─────────────────────────────
-function hexToRgba(hex, alpha = 1) {
-  if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) {
-    return `rgba(136, 135, 128, ${alpha})`
+// ─── Color helpers ─────────────────────────────────
+
+// Couleur d'accent par défaut (teal Héka) si aucune couleur de thème valide.
+const DEFAULT_ACCENT = '#2BBFB3'
+
+// Valide et normalise une chaîne hex (#RGB ou #RRGGBB), retourne la forme #RRGGBB ou null.
+function normalizeHexColor(value) {
+  if (!value || typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(trimmed)) return null
+  if (trimmed.length === 4) {
+    return '#' + trimmed.slice(1).split('').map(c => c + c).join('').toLowerCase()
   }
-  const cleanHex = hex.length === 4
-    ? hex.slice(1).split('').map(c => c + c).join('')
-    : hex.slice(1)
-  if (cleanHex.length !== 6) return `rgba(136, 135, 128, ${alpha})`
-  const r = parseInt(cleanHex.slice(0, 2), 16)
-  const g = parseInt(cleanHex.slice(2, 4), 16)
-  const b = parseInt(cleanHex.slice(4, 6), 16)
-  if (isNaN(r) || isNaN(g) || isNaN(b)) return `rgba(136, 135, 128, ${alpha})`
+  return trimmed.toLowerCase()
+}
+
+// Choisit une couleur d'accent fiable pour un thème, en testant dans l'ordre :
+// borderColor → titleColor → backgroundColor → fallback teal.
+function getThemeAccentColor(subject) {
+  if (!subject) return DEFAULT_ACCENT
+  return (
+    normalizeHexColor(subject.borderColor) ||
+    normalizeHexColor(subject.titleColor) ||
+    normalizeHexColor(subject.backgroundColor) ||
+    DEFAULT_ACCENT
+  )
+}
+
+// Convertit un hex en rgba(). Utilise normalizeHexColor pour valider l'entrée.
+// Si la couleur est invalide, retourne un rgba dérivé du teal Héka.
+function hexToRgba(hex, alpha = 1) {
+  const normalized = normalizeHexColor(hex)
+  if (!normalized) return `rgba(43, 191, 179, ${alpha})`
+  const r = parseInt(normalized.slice(1, 3), 16)
+  const g = parseInt(normalized.slice(3, 5), 16)
+  const b = parseInt(normalized.slice(5, 7), 16)
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
