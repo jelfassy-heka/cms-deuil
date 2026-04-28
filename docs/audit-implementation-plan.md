@@ -126,7 +126,7 @@ L’erreur précédente semble donc être un incident local/transitoire npm ou r
 - Statut :
   - `node --check eslint.config.js` : OK 
   - import config Node : OK 
-  - `npm run lint` :  KO
+  - `npm run lint` :  OK
 
 ## Incident ESLint — Lot 0
 

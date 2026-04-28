@@ -140,7 +140,7 @@ export default function PartnerHelp({ onNavigate }) {
         <p className="text-base font-bold mb-1" style={{ color: '#065f46' }}>Besoin d'aide supplémentaire ?</p>
         <p className="text-sm mb-4" style={{ color: '#065f46' }}>Notre équipe est disponible pour vous accompagner.</p>
         <button
-          onClick={() => onNavigate && onNavigate('new_request')}
+          onClick={() => onNavigate && onNavigate('requests')}
           className="px-5 py-3 rounded-2xl text-white text-sm font-semibold"
           style={{ backgroundColor: '#2BBFB3' }}>
           Contacter l'assistance →

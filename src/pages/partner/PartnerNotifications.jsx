@@ -43,7 +43,7 @@ function computePartnerNotifications({ requests, codes, contract, beneficiaries 
       ),
       label: `${pct}% des codes utilisés`,
       detail: 'Pensez à demander de nouveaux codes',
-      action: 'new_request',
+      action: 'requests',
     })
   }
 

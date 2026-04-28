@@ -54,3 +54,8 @@ Pour les décisions techniques d’exécution, utiliser `package.json` et `packa
 ## Déploiement
 
 Le projet est déployé sur Vercel avec un rewrite SPA vers `index.html`.
+
+## Qualité / lint
+
+La baseline ESLint est stabilisée : `npm run lint` retourne 0 erreur bloquante.
+Trois warnings React Hooks restent documentés et seront traités dans un futur lot dette technique.
