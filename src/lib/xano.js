@@ -4,8 +4,24 @@ const BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
 // Configuré dans Vercel → Settings → Environment Variables → VITE_DATASOURCE
 const DATASOURCE = import.meta.env.VITE_DATASOURCE || 'live'
 
+// Helper bearer (lot 7) — lit le token CMS persisté par AuthContext.
+// Conserve l'absence de header pour les flows publics (token vide / absent).
+export const getAuthToken = () => {
+  try {
+    const token = localStorage.getItem('heka_auth_token')
+    return token && token.length > 0 ? token : null
+  } catch {
+    return null
+  }
+}
+
+export const getAuthHeaders = () => {
+  const token = getAuthToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 const getHeaders = (extra = {}) => {
-  const headers = { ...extra }
+  const headers = { ...getAuthHeaders(), ...extra }
   if (DATASOURCE && DATASOURCE !== 'live') {
     headers['X-Data-Source'] = DATASOURCE
   }

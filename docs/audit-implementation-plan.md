@@ -9,7 +9,9 @@
 5. Lot 4 — Data layer / hooks API Partenaire
 6. Lot 5 — Performance frontend & dette technique
 7. Lot 5.1 — Correctif UI Cocon : contraste & états sélectionnés
-8. Lot 6 — Données futures / backend / sécurité (non démarré)
+8. Lot 6 — Données futures / backend / sécurité : documentation validée, inspection Xano effectuée
+9. Xano 6.2A — Création `/me/partner_membership` : validé
+10. Lot 7 — Frontend bearer compatibility layer : validé en local, à pousser
 
 ## Règles de livraison
 
@@ -38,6 +40,24 @@ Décision :
 - Le CDC v3.0 reste une référence historique et métier.
 - Pour l'état opérationnel actuel, ce fichier de suivi et les validations de lots font foi.
 - Toute évolution future Cocon = lot dédié avec tests de régression Cocon complets.
+
+## Mise à jour de cadrage — Xano
+
+Le projet utilise **2 workspaces Xano** et **3 groupes d’API** :
+
+| Workspace Xano | Groupe API | Usage |
+|---|---|---|
+| CMS | CMS — `api:M9mahf09` | Partenaires, contrats, codes, demandes, membres, emails transactionnels |
+| CMS | Auth — `api:IS_IPWIL` | Authentification CMS |
+| App | App — `api:I-Ku3DV8` | Contenus App / Cocon / app-users |
+
+Décisions :
+
+- Auth n’est pas un workspace séparé : c’est un groupe d’API du workspace CMS.
+- Les endpoints Cocon vivent dans le workspace App.
+- Les endpoints App existants ne doivent pas être déplacés ni modifiés sans analyse d’impact mobile.
+- Toute sécurisation Cocon future doit être traitée dans un sous-lot dédié avec décision d’architecture préalable.
+- La prochaine action backend sûre est `Xano 6.2A — création de /me/partner_membership`, sans modification de Cocon ni activation globale de l’auth CMS.
 
 ## Lot 0 — Baseline & garde-fous
 
@@ -415,23 +435,161 @@ Aucun fichier source applicatif (`.jsx` / `.js` autre que documentation) n'a ét
 - Aucune nouvelle dépendance.
 - `package.json` / `package-lock.json` non modifiés.
 
-### Prochaines actions backend Xano (à planifier hors repo)
+## Xano 6.2A — Création `/me/partner_membership`
 
-Dans l'ordre suggéré :
+### Statut
 
-1. **Activer le filtrage `partner_id` côté serveur** sur tous les endpoints listés dans la checklist §A.2 et §A.3.
-2. **Restreindre `auth/signup`** aux bearers admin et adapter l'appel frontend dans un lot frontend dédié (`AdminAccounts.jsx`).
-3. **Créer un endpoint `/me/partner_membership`** qui retourne les memberships du token, pour remplacer le `getAll('partner_members')` du login.
-4. **Sécuriser les endpoints Cocon `admin-*`** (admin only + validation max 4 cuts par séance côté serveur).
-5. **Créer la table `audit_logs`** et journaliser les actions critiques listées dans la checklist §D.
-6. **Mettre en place rate limiting** sur `auth/login`, `forgot-password`, `send-email`, `send-code-email`.
-7. **Activer le pipeline Brevo → Xano** (webhooks ouvert/clic/bounce) pour débloquer les KPI funnel email du lot 2.
-8. **Aligner conventions** : éliminer la divergence `partnerId` (camelCase) sur `plan-activation-code` au profit de `partner_id` (snake_case) — nécessite migration Xano + lot frontend de réalignement.
+Validé.
 
-### Prochaines actions frontend (à planifier dans des lots dédiés, après hardening backend)
+### Endpoint
 
-- Ajouter le bearer token aux clients `xano.js` et `xanoApp.js` une fois Xano configuré pour l'exiger.
-- Remplacer `getAll('partner_members')` par l'endpoint `/me/partner_membership`.
-- Adapter `AdminAccounts.jsx` pour transmettre le bearer admin sur `auth/signup`.
-- Étudier une CSP stricte et le passage d'éventuel cookie HttpOnly côté Vercel (cf. `frontend-security-notes.md` §7).
-- Reprendre l'affichage frontend des données débloquées (date d'envoi, ouvert, activation, relances, adoption par département…) dans des lots dédiés une fois disponibles.
+- Workspace : CMS.
+- Groupe API : Auth — `api:IS_IPWIL`.
+- Méthode : `GET`.
+- Path : `/me/partner_membership`.
+- Auth : bearer `cms_users` obligatoire.
+- Publication : OK.
+
+### Réponse
+
+Retourne uniquement :
+- `member_id`
+- `partner_id`
+- `role`
+- `status`
+- `partner_name`
+
+Aucune liste complète `partner_members`, aucun `user_email`, aucune PII inutile.
+
+### Tests réalisés
+
+- Sans bearer : 401.
+- Bearer invalide : 401.
+- Compte partenaire avec membership : OK.
+- Compte admin pur sans membership : `[]`.
+- Table complète `partner_members` jamais exposée.
+
+### Hors périmètre
+
+- `auth/signup` non modifié.
+- Filtrage `partner_id` global non activé.
+- Endpoints Cocon non touchés.
+- Workspace App non touché.
+- Frontend non modifié.
+
+### Prochaine étape
+
+Lot 7 — remplacer le `getAll('partner_members')` du login par `/me/partner_membership` et ajouter le bearer aux appels qui seront durcis ensuite.
+
+## Lot 7 — Frontend bearer compatibility layer
+
+### Statut
+
+Livraison locale validée (lint OK, build OK, dev OK). À pousser sur GitHub puis merger après tests manuels.
+
+### Objectif
+
+Adapter le frontend au nouvel endpoint Xano sécurisé `GET /me/partner_membership` et préparer l'envoi du bearer token sur les appels CMS / App / Auth, sans changement backend, sans nouvelle dépendance et sans changement fonctionnel volontaire. Lot non cassant : les endpoints Xano existants acceptent encore les appels actuels sans bearer ; ce lot rend simplement le frontend compatible avec le durcissement à venir.
+
+### Changements appliqués
+
+- `src/context/AuthContext.jsx` : suppression du `xano.getAll('partner_members')` au login partenaire et remplacement par `GET /me/partner_membership` (workspace CMS, groupe API Auth `api:IS_IPWIL`) avec bearer obligatoire. Sélection du premier membership actif (`status === 'active'`) si présent, sinon premier membership. Refus de login partenaire conservé si la réponse est vide. Plus aucun `user_email` exposé, plus de filtrage côté client.
+- `src/lib/xano.js` : ajout du helper `getAuthToken()` / `getAuthHeaders()` (lecture `localStorage.heka_auth_token`, retour vide si absent ou vide). `getHeaders()` injecte automatiquement `Authorization: Bearer <token>` quand un token existe. URLs, méthodes HTTP et payloads inchangés.
+- `src/lib/xanoApp.js` : import du helper depuis `./xano` et propagation de `Authorization` sur `getAll`, `post`, `patch`. Endpoints App, payloads et `Content-Type` JSON conservés à l'identique.
+- `src/api/partnerApi.js` : ajout de `Authorization` (via le helper) sur `sendNotificationEmail` et `sendCodeEmail`. `changePassword` conserve son comportement (bearer déjà transmis explicitement). Convention `partnerId` (camelCase) sur `getCodes` préservée.
+- `src/pages/admin/AdminAccounts.jsx` : ajout de `Authorization` (via le helper) sur le `fetch` `auth/signup`. Payload, UX et validation inchangés. Le header est ignoré tant que `auth/signup` est public côté Xano (Xano 6.2B).
+- `src/pages/admin/Cocon.jsx` : ajout de `Authorization` (via le helper) sur les `fetch` `admin-session-delete`, `admin-cut-create/update`, `admin-subject-create/update`, `admin-session-create/update`. Aucun `Content-Type` fixé manuellement sur les multipart (boundaries gérées par le navigateur). FormData, champs `thumbnail` / `thumbNail`, règles cuts, save/delete/upload/reorder inchangés.
+
+### Hors périmètre conservé
+
+- Aucune modification d'endpoint Xano (le lot est purement frontend).
+- Aucune modification d'URL, méthode HTTP ou payload backend.
+- Aucune modification de la convention `partnerId` sur `plan-activation-code`.
+- Aucune modification de la logique métier Cocon ni des règles cuts/uploads/save/delete/reorder.
+- Aucune modification d'UI.
+- Aucune nouvelle dépendance.
+- `package.json` / `package-lock.json` non modifiés.
+- Pas de migration vers React Query / SWR / Redux / Zustand, pas de nouveau store global.
+
+### États backend non encore traités
+
+- `auth/signup` reste public côté Xano (Xano 6.2B à venir).
+- Le filtrage `partner_id` côté serveur n'est pas encore activé (Xano 6.1 à venir).
+- Les endpoints Cocon (workspace App) ne sont pas modifiés et restent ouverts côté backend (Xano 6.3 à étudier avec analyse d'impact mobile).
+
+### Validation locale
+
+- `npm run lint` : OK, 0 erreur, 0 warning.
+- `npm run build` : OK, 11 chunks, plus gros chunk `SharedUI` 287 kB (gzip 89 kB), aucune régression.
+- `npm run dev` : OK, démarrage en ~210 ms.
+
+### Tests manuels à dérouler avant merge
+
+- Login admin.
+- Login partenaire avec membership : récupération du `partner_id` et du `role` via `/me/partner_membership`.
+- Login partenaire sans membership : refus avec message conservé.
+- Logout : nettoyage complet du localStorage.
+- Refresh navigateur : ré-hydratation OK.
+- `/partner`, `/partner/codes`, `/partner/team`.
+- `/admin`.
+- Création de compte admin / partenaire (compte de test si possible).
+- Ouverture Cocon simple : pas de régression d'affichage avec les nouveaux headers.
+
+### Prochaines actions backend Xano
+
+Ordre corrigé après inspection Xano :
+
+1. **Xano 6.2A — Créer `GET /me/partner_membership` uniquement**
+   - Workspace CMS.
+   - Groupe API recommandé : Auth `api:IS_IPWIL` ou CMS `api:M9mahf09` selon faisabilité Xano.
+   - Objectif : retourner uniquement les memberships du token.
+   - Ne pas modifier `auth/signup`.
+   - Ne pas activer le filtrage `partner_id` global.
+   - Ne pas modifier Cocon.
+
+2. **Lot 7 — Frontend bearer compatibility layer**
+   - Ajouter `Authorization: Bearer ...` aux appels CMS/App/Auth concernés.
+   - Remplacer le `getAll('partner_members')` du login par `/me/partner_membership`.
+   - Ajouter le bearer à `auth/signup`, aux appels partenaires et aux fetch Cocon.
+   - Ce lot doit être livré pendant que les endpoints Xano acceptent encore les appels existants.
+
+3. **Xano 6.2B — Restreindre `auth/signup` aux bearers admin**
+   - À faire seulement après adaptation frontend.
+
+4. **Xano 6.1 — Activer le filtrage `partner_id` serveur**
+   - À faire après Lot 7, sinon risque de casser l’espace Partenaire.
+
+5. **Xano 6.3 — Cocon admin hardening**
+   - À traiter seulement après décision d’architecture.
+   - Ne pas déplacer ni modifier les endpoints App existants sans analyse d’impact mobile.
+   - Options à étudier : endpoints CMS protégés dédiés, proxy CMS, validation inter-workspace, ou sécurisation App si impact mobile nul.
+
+6. **Xano 6.4 — Créer `audit_logs` et journaliser les actions critiques**
+
+7. **Xano 6.5 — Mettre en place rate limiting**
+   - `auth/login`
+   - `forgot-password`
+   - `send-email`
+   - `send-code-email`
+
+8. **Xano 6.6 — Brevo + migration `partnerId` vers `partner_id`**
+   - Webhooks Brevo.
+   - Compat temporaire `partnerId` / `partner_id`.
+   - Lot frontend de réalignement ensuite.
+
+### Prochaines actions frontend
+
+À planifier dans un lot dédié après Xano 6.2A :
+
+1. **Lot 7 — Frontend bearer compatibility layer**
+   - Ajouter le bearer token aux clients `xano.js`, `xanoApp.js` et aux fetch custom.
+   - Remplacer `getAll('partner_members')` par `/me/partner_membership`.
+   - Adapter `AdminAccounts.jsx` pour transmettre le bearer admin à `auth/signup`.
+   - Ajouter le bearer aux appels Cocon sans modifier les payloads.
+   - Garder provisoirement `partnerId` sur `plan-activation-code` tant que la migration `partner_id` n’est pas faite.
+
+2. **Lot frontend post-Brevo**
+   - Exploiter les nouveaux champs email : ouvert, cliqué, bounce, délivré.
+
+3. **Lot frontend post-migration `partner_id`**
+   - Remplacer `partnerId` par `partner_id` sur `plan-activation-code` après compat backend.

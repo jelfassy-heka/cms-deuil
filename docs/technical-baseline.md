@@ -14,7 +14,19 @@ Pour les décisions techniques d’exécution, utiliser package.json et package-
 
 ## Définition du repo
 
-Le repo `cms-deuil` est le frontend privé du CMS Héka : une application React/Vite déployée sur Vercel, connectée aux workspaces Xano CMS/App/Auth, permettant d’administrer les contenus de l’app mobile, les partenaires, les contrats et les codes d’activation.
+Le repo `cms-deuil` est le frontend privé du CMS Héka : une application React/Vite déployée sur Vercel, connectée à 2 workspaces Xano — CMS et App — et à 3 groupes d’API — CMS, Auth et App — permettant d’administrer les contenus de l’app mobile, les partenaires, les contrats et les codes d’activation.
+
+## Architecture Xano réelle
+
+Le projet utilise 2 workspaces Xano et 3 groupes d’API :
+
+| Workspace Xano | Groupe API | Base API | Usage |
+|---|---|---|---|
+| CMS | CMS — `api:M9mahf09` | `https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09` | Partenaires, contrats, codes, demandes, membres, emails transactionnels |
+| CMS | Auth — `api:IS_IPWIL` | `https://x8xu-lmx9-ghko.p7.xano.io/api:IS_IPWIL` | Login, auth/me, signup, verify-password, change-password |
+| App | App — `api:I-Ku3DV8` | `https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8` | Cocon, contenus App, sessions, thèmes, cuts vidéo, app-users |
+
+Il n’existe pas de workspace Auth séparé : Auth est un groupe d’API du workspace CMS.
 
 ## Référence métier
 

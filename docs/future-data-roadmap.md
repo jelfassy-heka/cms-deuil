@@ -9,6 +9,23 @@ services externes (Brevo, RevenueCat, Bridge App). Elle ne couvre pas les
 développements UI : ceux-ci seront repris dans les lots suivants une fois les
 champs disponibles.
 
+## Cadrage Xano actualisé
+
+Le projet utilise 2 workspaces Xano et 3 groupes d’API :
+
+- Workspace CMS :
+  - groupe API CMS `api:M9mahf09` ;
+  - groupe API Auth `api:IS_IPWIL`.
+- Workspace App :
+  - groupe API App `api:I-Ku3DV8`.
+
+Les évolutions de données futures doivent respecter cette séparation :
+
+- les données partenaires, codes, demandes, audit logs et memberships relèvent en priorité du workspace CMS ;
+- les contenus Cocon et données liées à l’application mobile relèvent du workspace App ;
+- les endpoints App existants ne doivent pas être déplacés ni modifiés sans analyse d’impact mobile ;
+- les données Brevo liées aux emails de codes peuvent être créées côté CMS, car elles alimentent les dashboards partenaires et les KPI d’activation.
+
 ## Légende
 
 - **Priorité** : `P0` = bloquant pour des features déjà esquissées dans l'UI ; `P1` = améliore l'expérience existante ; `P2` = nice to have.

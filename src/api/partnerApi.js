@@ -7,7 +7,7 @@
 // tables attendent `partner_id` (snake_case). Toute uniformisation côté client
 // briserait les filtres serveur — voir les sites d'appel d'origine.
 
-import xano from '../lib/xano'
+import xano, { getAuthHeaders } from '../lib/xano'
 
 const XANO_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:M9mahf09'
 const XANO_AUTH_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:IS_IPWIL'
@@ -61,7 +61,7 @@ export const createRequest = (data) =>
 export const sendNotificationEmail = (to_email, to_name, template_id, params) =>
   fetch(`${XANO_BASE}/send-email`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ to_email, to_name, template_id, params: JSON.stringify(params) }),
   })
 
@@ -70,7 +70,7 @@ export const sendNotificationEmail = (to_email, to_name, template_id, params) =>
 export const sendCodeEmail = (payload) =>
   fetch(`${XANO_BASE}/send-code-email`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(payload),
   })
 

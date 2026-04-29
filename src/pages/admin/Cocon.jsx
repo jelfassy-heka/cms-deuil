@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import xanoApp from '../../lib/xanoApp'
+import { getAuthHeaders } from '../../lib/xano'
 import { SkeletonStats, SkeletonList, Toast, useToast, useConfirm } from '../../components/SharedUI'
 
 const APP_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8'
@@ -263,7 +264,7 @@ export default function Cocon() {
 
     const res = await fetch(`${APP_BASE}/admin-session-delete`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify({ id: sessionToDelete.id }),
     })
     if (!res.ok) {
@@ -341,7 +342,8 @@ export default function Cocon() {
 
       setSaving(true)
       try {
-        const res = await fetch(`${APP_BASE}/${endpoint}`, { method, body: fd })
+        // Multipart : ne jamais fixer Content-Type, le navigateur produit le boundary.
+        const res = await fetch(`${APP_BASE}/${endpoint}`, { method, body: fd, headers: getAuthHeaders() })
         if (!res.ok) {
           const text = await res.text().catch(() => '')
           throw new Error(`${res.status} ${res.statusText}${text ? ' — ' + text : ''}`)
@@ -427,7 +429,8 @@ export default function Cocon() {
 
     setSaving(true)
     try {
-      const res = await fetch(`${APP_BASE}/${endpoint}`, { method, body })
+      // Multipart : ne jamais fixer Content-Type, le navigateur produit le boundary.
+      const res = await fetch(`${APP_BASE}/${endpoint}`, { method, body, headers: getAuthHeaders() })
       if (!res.ok) {
         const text = await res.text().catch(() => '')
         throw new Error(`${res.status} ${res.statusText}${text ? ' — ' + text : ''}`)

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import xano from '../../lib/xano'
+import xano, { getAuthHeaders } from '../../lib/xano'
 import { Toast, useToast, useConfirm, SearchInput, SkeletonStats, SkeletonList, useDebounce } from '../../components/SharedUI'
 
 const XANO_AUTH_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:IS_IPWIL'
@@ -44,9 +44,13 @@ export default function AdminAccounts() {
     setCreating(true)
     try {
       // 1. Créer l'utilisateur via Xano auth
+      // Lot 7 : on transmet le bearer admin si dispo pour préparer le durcissement
+      // Xano 6.2B (auth/signup réservé aux admins). L'endpoint reste public côté
+      // backend pour l'instant : ce header est ignoré tant que le contrôle n'est
+      // pas activé.
       const signupResp = await fetch(`${XANO_AUTH_URL}/auth/signup`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
           email: form.email, password: form.password,
           name: form.name || form.email.split('@')[0],
