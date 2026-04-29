@@ -1,20 +1,29 @@
 # Checklist de hardening Xano — CMS Héka
 
-Document généré au lot 6. Ce fichier liste les contrôles à mettre en place
-**côté Xano** pour sécuriser les endpoints consommés par le frontend CMS Héka.
-Il se complète de [`docs/api-endpoint-inventory.md`](api-endpoint-inventory.md)
-qui dresse la cartographie des appels actuels.
+Document généré au lot 6. Ce fichier liste les contrôles à mettre en place **côté Xano** pour sécuriser les endpoints consommés par le frontend CMS Héka.
 
-**Convention :** chaque ligne est à cocher après vérification réelle dans Xano
-(test d'autorisation, test de payload, test de limite).
+Le projet utilise **2 workspaces Xano** et **3 groupes d’API** :
+
+| Workspace Xano | Groupe API | Usage |
+|---|---|---|
+| CMS | CMS — `api:M9mahf09` | Données métier CMS : partenaires, contrats, codes, demandes, membres, emails |
+| CMS | Auth — `api:IS_IPWIL` | Authentification CMS : login, me, signup, verify-password, change-password |
+| App | App — `api:I-Ku3DV8` | Contenus App / Cocon : thèmes, séances, cuts vidéo, app-users |
+
+Important : Auth est un groupe d’API du workspace CMS, pas un troisième workspace.
+
+Ce fichier se complète de [`docs/api-endpoint-inventory.md`](api-endpoint-inventory.md), qui dresse la cartographie des appels actuels.
+
+**Convention :** chaque ligne est à cocher après vérification réelle dans Xano : test d’autorisation, test de payload, test de limite, publication contrôlée de l’endpoint.
 
 ## A. Authentification / autorisation
 
 ### A.1 Endpoints admin réservés aux admins
 
-- [ ] Tous les endpoints CRUD du workspace **CMS** (`api:M9mahf09`) qui exposent des données multi-partenaires (ex. `partners` listing complet, `app-users`, `posts`, `spaces`, `crm_activity`, `plan-activation-code` listing complet sans filtre, `partner_members` sans filtre) sont protégés par une fonction Xano qui vérifie que `cms_users.user_type === 'admin'`.
-- [ ] Tous les endpoints du workspace **App** (`api:I-Ku3DV8`) `admin-*` (subjects, sessions, cuts) sont admin-only.
-- [ ] L'endpoint `/auth/signup` (workspace Auth) **exige un bearer admin** (le frontend appelle aujourd'hui sans bearer depuis `AdminAccounts.jsx` — à corriger des deux côtés une fois le backend prêt).
+- [ ] Tous les endpoints CRUD du groupe API **CMS** (`api:M9mahf09`) qui exposent des données multi-partenaires sont protégés par une fonction Xano qui vérifie que `cms_users.user_type === 'admin'`, sauf endpoints explicitement destinés aux partenaires et filtrés par `partner_id`.
+- [ ] L’endpoint `/auth/signup` du groupe API **Auth** (`api:IS_IPWIL`) exige un bearer admin. Côté frontend, le lot 7 transmet déjà le bearer admin sur cet appel ; il reste à activer le contrôle côté Xano (Xano 6.2B).
+- [ ] Les endpoints Cocon `admin-*` du groupe API **App** (`api:I-Ku3DV8`) doivent être traités avec prudence : ils sont dans le workspace App et peuvent avoir un impact sur l’application mobile. Ne pas les déplacer ni les modifier sans analyse d’impact.
+- [ ] Pour Cocon, préférer une stratégie dédiée : nouveaux endpoints CMS protégés, endpoints proxy CMS, ou sécurisation des endpoints App existants uniquement après confirmation qu’ils ne sont pas consommés par le mobile. Côté frontend, le lot 7 transmet déjà le bearer sur tous les fetch Cocon ; le contrôle côté Xano reste à activer.
 
 ### A.2 Endpoints partenaire filtrés par partner_id
 
@@ -36,14 +45,34 @@ qui dresse la cartographie des appels actuels.
 - [ ] La distinction `partner_members.role === 'admin'` (gouvernance partenaire) est validée backend pour : invitations (`POST /partner_members`), changements de rôle (`PATCH /partner_members/{id}.role`), retraits (`DELETE /partner_members/{id}`), modification de `partners` (`PATCH /partners/{id}`).
 - [ ] `verify-password` ne sert **que** de second facteur de confirmation, jamais comme contrôle d'autorisation : tout endpoint qui suit un `verify-password` (Cocon delete, génération de codes) doit re-valider le rôle `admin` côté serveur.
 
-### A.5 Login
+### A.5 Login et résolution du partenaire
 
-- [ ] `auth/login` : rate limit (ex. 5 tentatives / 15 min / IP), détection brute force.
-- [ ] `auth/login` : message d'erreur générique (ne pas distinguer « email inconnu » de « mot de passe incorrect »).
-- [ ] `forgot-password` : rate limit + message générique (ne pas révéler si l'email existe).
-- [ ] Le frontend résout le `partnerId` en listant **tous** les `partner_members` après login. → Créer un endpoint dédié `/me/partner_membership` qui retourne uniquement les memberships du token, et adapter le frontend dans un lot dédié.
+- [ ] `auth/login` : rate limit, détection brute force, message d’erreur générique.
+- [ ] `forgot-password` : rate limit + message générique, sans révéler si l’email existe.
+- [x] Le frontend résolvait le `partnerId` en listant tous les `partner_members` après login. **Lot 7** : remplacé par `/me/partner_membership`.
+- [x] Créer en priorité un endpoint sécurisé `GET /me/partner_membership` qui retourne uniquement les memberships du token. **Xano 6.2A — validé.**
+- [x] Sous-lot **Xano 6.2A** — créer `/me/partner_membership` uniquement, sans encore restreindre `auth/signup` et sans activer le filtrage `partner_id` global. **Validé.**
+- [x] Après création de `/me/partner_membership`, créer un lot frontend dédié pour remplacer le `getAll('partner_members')` du login. **Lot 7 — livré localement, à pousser.**
+- [ ] `auth/login` : définir explicitement les inputs attendus `email` et `password` pour éviter la fuite d’un nom interne Xano comme `field_value` sur payload malformé.
+- [ ] `auth/login` : remplacer les retours `ERROR_FATAL` sur credentials invalides par une réponse propre et uniforme de type 401 / unauthorized.
+- [ ] `auth/login` : vérifier que les cas “email inconnu”, “mot de passe incorrect” et “mot de passe manquant” ont une réponse homogène, sans fuite par message ou par timing.
 
 ## B. Cocon
+
+### B.0 Précaution d’architecture
+
+Les endpoints Cocon vivent dans le workspace **App** (`api:I-Ku3DV8`). Les tables manipulées (`therapy-session-subjects`, `therapy-sessions`, `session-videos`) sont liées au contenu consommé par l’application mobile.
+
+Règle projet :
+
+- [ ] Ne pas déplacer les endpoints Cocon du workspace App vers le workspace CMS sans décision d’architecture validée.
+- [ ] Ne pas modifier les endpoints App existants tant que leur usage par l’application mobile n’est pas confirmé.
+- [ ] Étudier d’abord les options suivantes :
+  - nouveaux endpoints CMS protégés dédiés au CMS ;
+  - endpoints proxy CMS validant le bearer admin puis appelant la logique App ;
+  - sécurisation des endpoints App existants uniquement si l’impact mobile est nul ;
+  - validation inter-workspace du token admin CMS si Xano le permet proprement.
+- [ ] Toute évolution Cocon backend doit faire l’objet d’un sous-lot dédié avec tests de régression Cocon complets.
 
 ### B.1 Endpoints d'écriture
 
@@ -168,5 +197,14 @@ Pour chaque endpoint listé dans `api-endpoint-inventory.md`, valider :
 Une fois ce hardening complet :
 
 1. Mettre à jour cette checklist en cochant chaque ligne validée.
-2. Ouvrir un lot frontend de **micro-corrections** pour aligner les appels qui peuvent maintenant porter un bearer token (ex. `xano.js` et `xanoApp.js` n'envoient pas de header Authorization aujourd'hui — un lot dédié pourrait les ajouter sans changer les payloads).
+2. ~~Ouvrir un lot frontend de micro-corrections pour aligner les appels qui peuvent maintenant porter un bearer token~~ — **Lot 7 livré (localement)** : `xano.js`, `xanoApp.js`, `partnerApi.js`, `AdminAccounts.jsx` (auth/signup) et `Cocon.jsx` (admin-*) transmettent désormais `Authorization: Bearer <token>` quand un token est présent. Aucun payload, URL ou méthode HTTP n'a été modifié.
 3. Documenter dans `audit-implementation-plan.md` le passage en revue.
+
+## H. Statut consolidé après Xano 6.2A + Lot 7
+
+- ✅ **Xano 6.2A** — `GET /me/partner_membership` créé, publié, testé (sans bearer 401, bearer invalide 401, partenaire avec membership OK, admin pur `[]`).
+- ✅ **Lot 7 — Frontend bearer compatibility layer** — livré localement (lint OK, build OK, dev OK). Login partenaire utilise `/me/partner_membership`, plus de `getAll('partner_members')` ni de filtrage côté client par `user_email`. Bearer transmis sur l'ensemble des appels sensibles.
+- ⏳ **Xano 6.2B** — `auth/signup` à restreindre aux bearers admin (frontend déjà compatible).
+- ⏳ **Xano 6.1** — filtrage `partner_id` serveur à activer sur les endpoints partenaires (frontend déjà compatible).
+- ⏳ **Xano 6.3** — sécurisation Cocon à instruire après décision d'architecture (frontend déjà compatible côté envoi de bearer).
+- ⏳ **Xano 6.4 / 6.5 / 6.6** — audit logs, rate limiting, Brevo / migration `partnerId`.

@@ -1,5 +1,4 @@
 import { createContext, useContext, useState, useEffect } from 'react'
-import xano from '../lib/xano'
 
 const AuthContext = createContext(null)
 const XANO_AUTH_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:IS_IPWIL'
@@ -63,17 +62,26 @@ export function AuthProvider({ children }) {
         }
       }
 
-      // 4. Si partenaire, chercher le partner_member associé
-      let partnerMembers = []
+      // 4. Si partenaire, résoudre le membership via /me/partner_membership (Xano 6.2A)
+      // Endpoint sécurisé bearer cms_users — ne renvoie que les memberships du token,
+      // remplace l'ancien getAll('partner_members') + filtre client (lot 7).
+      let selectedMember = null
       if (selectedRole === 'partner') {
         try {
-          const allMembers = await xano.getAll('partner_members')
-          partnerMembers = allMembers.filter(m => m.user_email === email)
+          const membershipResp = await fetch(`${XANO_AUTH_URL}/me/partner_membership`, {
+            headers: { 'Authorization': `Bearer ${authToken}` },
+          })
+          if (membershipResp.ok) {
+            const body = await membershipResp.json()
+            const memberships = Array.isArray(body) ? body : []
+            // Premier membership actif si le champ status existe, sinon premier tel quel.
+            selectedMember = memberships.find(m => m.status === 'active') || memberships[0] || null
+          }
         } catch (err) {
-          console.error('Erreur lookup partner_members:', err)
+          console.error('Erreur lookup partner_membership:', err)
         }
 
-        if (partnerMembers.length === 0) {
+        if (!selectedMember) {
           return {
             success: false,
             error: 'Ce compte n\'est associé à aucun espace partenaire. Contactez votre administrateur.',
@@ -96,12 +104,11 @@ export function AuthProvider({ children }) {
       setUser(userData)
       setRole(selectedRole)
 
-      if (selectedRole === 'partner' && partnerMembers.length > 0) {
-        const member = partnerMembers[0]
-        setPartnerId(member.partner_id)
-        setMemberRole(member.role)
-        localStorage.setItem('heka_partner_id', member.partner_id)
-        localStorage.setItem('heka_member_role', member.role)
+      if (selectedRole === 'partner' && selectedMember) {
+        setPartnerId(selectedMember.partner_id)
+        setMemberRole(selectedMember.role)
+        localStorage.setItem('heka_partner_id', selectedMember.partner_id)
+        localStorage.setItem('heka_member_role', selectedMember.role)
       }
 
       return { success: true, is_first_login: userData.is_first_login }

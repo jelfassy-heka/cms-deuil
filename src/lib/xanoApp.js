@@ -1,8 +1,10 @@
+import { getAuthHeaders } from './xano'
+
 const APP_BASE = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8'
 
 const xanoApp = {
   async getAll(endpoint) {
-    const res = await fetch(`${APP_BASE}/${endpoint}`)
+    const res = await fetch(`${APP_BASE}/${endpoint}`, { headers: getAuthHeaders() })
     if (!res.ok) throw new Error(`GET /${endpoint} failed: ${res.status}`)
     const data = await res.json()
     return Array.isArray(data) ? data : (data?.items || [])
@@ -11,7 +13,7 @@ const xanoApp = {
   async post(endpoint, body) {
     const res = await fetch(`${APP_BASE}/${endpoint}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify(body),
     })
     if (!res.ok) {
@@ -24,7 +26,7 @@ const xanoApp = {
   async patch(endpoint, body) {
     const res = await fetch(`${APP_BASE}/${endpoint}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify(body),
     })
     if (!res.ok) {
