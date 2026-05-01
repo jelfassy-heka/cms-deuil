@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import xano from '../../lib/xano'
-import { getUsersOverview, getUserDetails } from '../../api/cmsBridgeApi'
 import { Toast, useToast, SearchInput, SkeletonStats, SkeletonList, Pagination, usePagination, EmptyState, exportToCSV, useDebounce } from '../../components/SharedUI'
+
+const APP_USERS_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8/app-users'
 
 const typeConfig = {
   partner: { label: 'Code partenaire', bg: '#e8f8f7', color: '#2BBFB3', avatarBg: '#2BBFB3' },
@@ -17,60 +18,31 @@ const dateFilters = [
   { key: '365', label: 'Cette année' },
 ]
 
+const getAuthMethod = (user) => {
+  const methods = []
+  if (user.google_oauth?.id && user.google_oauth.id !== '') methods.push('google')
+  if (user.facebook_oauth?.id && user.facebook_oauth.id !== 0 && user.facebook_oauth.id !== '') methods.push('facebook')
+  if (methods.length === 0) methods.push('email')
+  return methods
+}
+
 const authMethodConfig = {
   email: { label: 'Email', icon: '@', bg: '#f4f5f7', color: '#8a93a2', textBg: '#f4f5f7' },
   google: { label: 'Google', icon: 'G', bg: '#e8f0fe', color: '#1a73e8', textBg: '#e8f0fe' },
   facebook: { label: 'Facebook', icon: 'f', bg: '#e7f3ff', color: '#1877f2', textBg: '#e7f3ff' },
 }
 
-// ─── Auth methods depuis booleans bridge ──────────────────────────
-const getAuthMethod = (user) => {
-  const methods = []
-  if (user.hasGoogleOauth) methods.push('google')
-  if (user.hasFacebookOauth) methods.push('facebook')
-  if (methods.length === 0) methods.push('email')
-  return methods
-}
-
-// ─── Sécurité affichage défensive (Mission U3 §8) ─────────────────
-const SENSITIVE_KEYS = new Set([
-  'password', 'password_hash', 'authToken', 'auth_token', 'bearer', 'token',
-  'api_key', 'apiKey', 'secret', 'BREVO_API_KEY',
-  'magic_link', 'fcmTokens', 'google_oauth', 'facebook_oauth',
-])
-
-function sanitizeForDisplay(value) {
-  if (value === null || value === undefined) return value
-  if (Array.isArray(value)) return value.map(sanitizeForDisplay)
-  if (typeof value === 'object') {
-    const out = {}
-    for (const [k, v] of Object.entries(value)) {
-      if (SENSITIVE_KEYS.has(k)) {
-        out[k] = '[masqué]'
-      } else {
-        out[k] = sanitizeForDisplay(v)
-      }
-    }
-    return out
-  }
-  return value
-}
-
 export default function Users() {
-  // ─── Overview state (depuis cms-bridge) ─────────────────────────
   const [users, setUsers] = useState([])
-  const [usersTotal, setUsersTotal] = useState(0)
-  const [perPage] = useState(100) // backend cap 100 ; pagination serveur U4 si besoin
-  const [loading, setLoading] = useState(true)
-  const [forbidden, setForbidden] = useState(false)
-  const [overviewError, setOverviewError] = useState(null)
-
-  // ─── CMS data (workspace 17, sécurisé Batch 7) ──────────────────
   const [codes, setCodes] = useState([])
+  const [spaces, setSpaces] = useState([])
+  const [posts, setPosts] = useState([])
+  const [reactions, setReactions] = useState([])
   const [partners, setPartners] = useState([])
   const [beneficiaries, setBeneficiaries] = useState([])
+  const [alerts, setAlerts] = useState([])
+  const [loading, setLoading] = useState(true)
 
-  // ─── UI state ───────────────────────────────────────────────────
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [companyFilter, setCompanyFilter] = useState('all')
@@ -84,11 +56,6 @@ export default function Users() {
   const [showDetail, setShowDetail] = useState(false)
   const [exporting, setExporting] = useState(false)
 
-  // ─── Details state (lazy-loaded au clic user) ───────────────────
-  const [detailsRaw, setDetailsRaw] = useState(null)
-  const [detailsLoading, setDetailsLoading] = useState(false)
-  const [detailsError, setDetailsError] = useState(null)
-
   const { toast, showToast, clearToast } = useToast()
   const debouncedSearch = useDebounce(search)
 
@@ -97,67 +64,34 @@ export default function Users() {
     c(); window.addEventListener('resize', c); return () => window.removeEventListener('resize', c)
   }, [])
 
-  // ─── Fetch overview + CMS data au mount ─────────────────────────
   useEffect(() => {
     const fetchAll = async () => {
-      setLoading(true)
-      setForbidden(false)
-      setOverviewError(null)
       try {
-        const [overview, c, pa, b] = await Promise.all([
-          getUsersOverview({ page: 1, per_page: perPage }),
+        const [u, c, s, po, r, pa, b, a] = await Promise.all([
+          fetch(APP_USERS_URL).then(r => r.json()).catch(() => []),
           xano.getAll('plan-activation-code').catch(() => []),
+          xano.getAll('spaces').catch(() => []),
+          xano.getAll('posts').catch(() => []),
+          xano.getAll('post-reactions').catch(() => []),
           xano.getAll('partners').catch(() => []),
           xano.getAll('beneficiaries').catch(() => []),
+          xano.getAll('alerts').catch(() => []),
         ])
-        setUsers(Array.isArray(overview?.items) ? overview.items : [])
-        setUsersTotal(typeof overview?.total === 'number' ? overview.total : 0)
+        setUsers(Array.isArray(u) ? u : u?.items || [])
         setCodes(Array.isArray(c) ? c : c?.items || [])
+        setSpaces(Array.isArray(s) ? s : s?.items || [])
+        setPosts(Array.isArray(po) ? po : po?.items || [])
+        setReactions(Array.isArray(r) ? r : r?.items || [])
         setPartners(Array.isArray(pa) ? pa : pa?.items || [])
         setBeneficiaries(Array.isArray(b) ? b : b?.items || [])
-      } catch (err) {
-        if (err?.type === 'forbidden') {
-          setForbidden(true)
-        } else {
-          setOverviewError(err?.message || 'Erreur réseau')
-          console.error('Erreur chargement Users:', err)
-        }
-      } finally {
-        setLoading(false)
-      }
+        setAlerts(Array.isArray(a) ? a : a?.items || [])
+      } catch (err) { console.error('Erreur chargement:', err) }
+      finally { setLoading(false) }
     }
     fetchAll()
-  }, [perPage])
+  }, [])
 
-  // ─── Fetch details au clic user ─────────────────────────────────
-  useEffect(() => {
-    if (!selectedUser?.id) {
-      setDetailsRaw(null)
-      setDetailsError(null)
-      setDetailsLoading(false)
-      return
-    }
-    let cancelled = false
-    setDetailsLoading(true)
-    setDetailsError(null)
-    getUserDetails(selectedUser.id)
-      .then(d => { if (!cancelled) setDetailsRaw(d) })
-      .catch(err => {
-        if (cancelled) return
-        if (err?.type === 'not_found') {
-          setDetailsError('Utilisateur introuvable')
-        } else if (err?.type === 'forbidden') {
-          setDetailsError('Accès réservé aux administrateurs CMS')
-        } else {
-          setDetailsError(err?.message || 'Erreur réseau')
-        }
-        setDetailsRaw(null)
-      })
-      .finally(() => { if (!cancelled) setDetailsLoading(false) })
-    return () => { cancelled = true }
-  }, [selectedUser?.id])
-
-  // ─── Enrichir les users avec type et entreprise (mapping CMS) ───
+  // ─── Enrichir les users avec type et entreprise ───
   const enrichedUsers = useMemo(() => {
     return users.map(u => {
       const usedCode = codes.find(c => c.usedBy === u.id && c.used)
@@ -174,15 +108,23 @@ export default function Users() {
         companyName = partner?.name || partnerFromBenef?.name || null
       }
 
+      // Note: "paying" sera activé quand la table subscriptions sera prête
+      // Pour l'instant on ne peut pas déterminer les payants
+
+      const userSpaces = spaces.filter(s => s.ownerId === u.id)
+      const userPosts = posts.filter(p => p.issuerId === u.id)
+
       return {
         ...u,
         userType,
         companyName,
         codeUsed: usedCode?.code || null,
+        spacesCount: userSpaces.length,
+        postsCount: userPosts.length,
         authMethods: getAuthMethod(u),
       }
     })
-  }, [users, codes, partners, beneficiaries])
+  }, [users, codes, spaces, posts, partners, beneficiaries])
 
   // ─── Détection des doublons potentiels ───
   const duplicates = useMemo(() => {
@@ -194,15 +136,17 @@ export default function Users() {
       byEmail[email].push(u)
     })
     return Object.entries(byEmail)
-      .filter(([, users]) => users.length > 1)
+      .filter(([_, users]) => users.length > 1)
       .map(([email, users]) => ({ email, users }))
   }, [enrichedUsers])
 
+  // ─── Liste des entreprises pour le filtre ───
   const companyList = useMemo(() => {
     const names = [...new Set(enrichedUsers.filter(u => u.companyName).map(u => u.companyName))].sort()
     return names
   }, [enrichedUsers])
 
+  // ─── Stats ───
   const stats = useMemo(() => {
     const total = enrichedUsers.length
     const emailCount = enrichedUsers.filter(u => u.authMethods.includes('email') && !u.authMethods.includes('google') && !u.authMethods.includes('facebook')).length
@@ -219,6 +163,7 @@ export default function Users() {
     return { total, emailCount, googleCount, facebookCount, thisMonth, partnerCount, payingCount, freeCount }
   }, [enrichedUsers])
 
+  // ─── Filtrage ───
   const filtered = useMemo(() => {
     let result = enrichedUsers
 
@@ -228,9 +173,19 @@ export default function Users() {
         `${u.firstName || ''} ${u.lastName || ''} ${u.email || ''}`.toLowerCase().includes(s)
       )
     }
-    if (typeFilter !== 'all') result = result.filter(u => u.userType === typeFilter)
-    if (authMethodFilter !== 'all') result = result.filter(u => u.authMethods.includes(authMethodFilter))
-    if (companyFilter !== 'all') result = result.filter(u => u.companyName === companyFilter)
+
+    if (typeFilter !== 'all') {
+      result = result.filter(u => u.userType === typeFilter)
+    }
+
+    if (authMethodFilter !== 'all') {
+      result = result.filter(u => u.authMethods.includes(authMethodFilter))
+    }
+
+    if (companyFilter !== 'all') {
+      result = result.filter(u => u.companyName === companyFilter)
+    }
+
     if (dateFilter !== 'all') {
       const days = parseInt(dateFilter)
       const cutoff = new Date()
@@ -238,6 +193,7 @@ export default function Users() {
       result = result.filter(u => new Date(u.created_at) >= cutoff)
     }
 
+    // Tri
     result.sort((a, b) => {
       let va = a[sortField], vb = b[sortField]
       if (sortField === 'created_at') { va = new Date(va || 0); vb = new Date(vb || 0) }
@@ -260,82 +216,69 @@ export default function Users() {
 
   const selectUser = u => { setSelectedUser(u); if (isMobile) setShowDetail(true) }
 
-  // ─── Fusion details bridge + enrichissement client ──────────────
-  const fullDetails = useMemo(() => {
-    if (!detailsRaw) return null
-    const usedCode = codes.find(c => c.usedBy === detailsRaw.user.id && c.used)
-    const beneficiary = beneficiaries.find(b => b.email === detailsRaw.user.email)
-    return {
-      user: detailsRaw.user,
-      stats: detailsRaw.stats,
-      userSpaces: Array.isArray(detailsRaw.spaces) ? detailsRaw.spaces : [],
-      userPosts: Array.isArray(detailsRaw.posts) ? detailsRaw.posts : [],
-      userReactions: Array.isArray(detailsRaw.reactions) ? detailsRaw.reactions : [],
-      userAlerts: Array.isArray(detailsRaw.alerts) ? detailsRaw.alerts : [],
-      postsDocuments: Array.isArray(detailsRaw.postsDocuments) ? detailsRaw.postsDocuments : [],
-      reactionsImages: Array.isArray(detailsRaw.reactionsImages) ? detailsRaw.reactionsImages : [],
-      usedCode,
-      beneficiary,
-    }
-  }, [detailsRaw, codes, beneficiaries])
+  // ─── Données détaillées pour le panel ───
+  const selectedDetails = useMemo(() => {
+    if (!selectedUser) return null
+    const u = selectedUser
+    const userSpaces = spaces.filter(s => s.ownerId === u.id)
+    const userPosts = posts.filter(p => p.issuerId === u.id)
+    const userReactions = reactions.filter(r => r.userId === u.id)
+    const userAlerts = alerts.filter(a => a.sourceId === u.id)
+    const usedCode = codes.find(c => c.usedBy === u.id && c.used)
+    const beneficiary = beneficiaries.find(b => b.email === u.email)
+    return { userSpaces, userPosts, userReactions, userAlerts, usedCode, beneficiary }
+  }, [selectedUser, spaces, posts, reactions, alerts, codes, beneficiaries])
 
-  // ─── Export RGPD (utilise fullDetails directement, plus de xano.getAll) ──
+  // ─── Export RGPD ───
   const handleExportRGPD = async () => {
-    if (!selectedUser || !fullDetails) return
+    if (!selectedUser || !selectedDetails) return
     setExporting(true)
     try {
-      const u = { ...selectedUser, ...fullDetails.user }
-      const d = fullDetails
+      const u = selectedUser
+      const d = selectedDetails
       const now = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-      const html = generateRGPDhtml(u, d, fullDetails.postsDocuments, fullDetails.reactionsImages, now)
+
+      // Collecter les documents liés aux posts
+      let postDocs = []
+      try {
+        const allDocs = await xano.getAll('posts-documents')
+        const docs = Array.isArray(allDocs) ? allDocs : allDocs?.items || []
+        const postIds = d.userPosts.map(p => p.id)
+        postDocs = docs.filter(doc => postIds.includes(doc.posts_id))
+      } catch (e) { console.error('Erreur chargement docs:', e) }
+
+      // Collecter les images de réactions
+      let reactionImages = []
+      try {
+        const allImages = await xano.getAll('post-reaction-images')
+        const imgs = Array.isArray(allImages) ? allImages : allImages?.items || []
+        const reactionIds = d.userReactions.map(r => r.id)
+        reactionImages = imgs.filter(img => reactionIds.includes(img.post_reactions_id))
+      } catch (e) { console.error('Erreur chargement images:', e) }
+
+      const html = generateRGPDhtml(u, d, postDocs, reactionImages, now)
       const win = window.open('', '_blank')
-      if (win) {
-        win.document.write(html)
-        win.document.close()
-        showToast('Export RGPD ouvert dans un nouvel onglet — utilisez Ctrl+P pour sauvegarder en PDF')
-      } else {
-        showToast('Ouverture popup bloquée — autorisez les pop-ups', 'error')
-      }
+      win.document.write(html)
+      win.document.close()
+      showToast('Export RGPD ouvert dans un nouvel onglet — utilisez Ctrl+P pour sauvegarder en PDF')
     } catch (err) { console.error(err); showToast('Erreur export', 'error') }
     finally { setExporting(false) }
   }
 
   // ─── Rendu ───
-  if (forbidden) {
-    return (
-      <div>
-        <div className="mb-6">
-          <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Utilisateurs</h1>
-        </div>
-        <EmptyState icon="🔒" title="Accès réservé aux administrateurs CMS" message="Cette page nécessite un compte administrateur." />
-      </div>
-    )
-  }
-
   if (loading) return <div><SkeletonStats count={4} /><SkeletonList count={6} /></div>
 
-  if (overviewError) {
-    return (
-      <div>
-        <div className="mb-6">
-          <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Utilisateurs</h1>
-        </div>
-        <EmptyState icon="⚠️" title="Impossible de charger la liste" message={overviewError} actionLabel="Réessayer" onAction={() => window.location.reload()} />
-      </div>
-    )
-  }
-
   const showCompanyFilter = typeFilter === 'all' || typeFilter === 'partner'
-  const showLimitWarning = usersTotal > users.length
 
   return (
     <div>
       <Toast toast={toast} onClose={clearToast} />
 
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
         <div>
           <h1 className="text-xl md:text-2xl font-bold" style={{ color: '#1a2b4a' }}>Utilisateurs</h1>
-          <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>{stats.total} utilisateur{stats.total > 1 ? 's' : ''} de l'application Héka{showLimitWarning ? ` (${users.length} sur ${usersTotal})` : ''}</p>
+          <p className="text-sm mt-1" style={{ color: '#8a93a2' }}>{stats.total} utilisateur{stats.total > 1 ? 's' : ''} de l'application Héka</p>
         </div>
         <button
           onClick={() => exportToCSV(enrichedUsers, 'utilisateurs', [
@@ -350,14 +293,7 @@ export default function Users() {
         </button>
       </div>
 
-      {showLimitWarning && (
-        <div className="mb-4 p-3 rounded-2xl" style={{ backgroundColor: '#fff7ed', border: '1px solid #fed7aa' }}>
-          <p className="text-sm" style={{ color: '#9a3412' }}>
-            ⚠️ {users.length} premiers utilisateurs affichés sur {usersTotal}. Pagination serveur à étendre si besoin.
-          </p>
-        </div>
-      )}
-
+      {/* Bandeau doublons */}
       {duplicates.length > 0 && (
         <div className="mb-4 p-3 rounded-2xl flex items-center justify-between gap-3" style={{ backgroundColor: '#fff7ed', border: '1px solid #fed7aa' }}>
           <div>
@@ -380,6 +316,7 @@ export default function Users() {
         </div>
       )}
 
+      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         {[
           { label: 'Total', value: stats.total, color: '#2BBFB3', delta: `+${stats.thisMonth} ce mois` },
@@ -395,12 +332,15 @@ export default function Users() {
         ))}
       </div>
 
+      {/* Filtres */}
       <div className="flex flex-wrap gap-3 mb-4 items-center">
         <div className="flex-1 min-w-[200px]">
           <SearchInput value={search} onChange={setSearch} placeholder="Rechercher par nom, email..." />
         </div>
 
-        <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setCompanyFilter('all'); setPage(1) }}
+        <select
+          value={typeFilter}
+          onChange={e => { setTypeFilter(e.target.value); setCompanyFilter('all'); setPage(1) }}
           className="px-3 py-3 rounded-2xl text-sm outline-none"
           style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a', border: '1px solid #eef0f2' }}>
           <option value="all">Tous les types</option>
@@ -409,7 +349,9 @@ export default function Users() {
           <option value="free">Gratuit / Essai</option>
         </select>
 
-        <select value={authMethodFilter} onChange={e => { setAuthMethodFilter(e.target.value); setPage(1) }}
+        <select
+          value={authMethodFilter}
+          onChange={e => { setAuthMethodFilter(e.target.value); setPage(1) }}
           className="px-3 py-3 rounded-2xl text-sm outline-none"
           style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a', border: '1px solid #eef0f2' }}>
           <option value="all">Toutes méthodes</option>
@@ -419,7 +361,9 @@ export default function Users() {
         </select>
 
         {showCompanyFilter && companyList.length > 0 && (
-          <select value={companyFilter} onChange={e => { setCompanyFilter(e.target.value); setPage(1) }}
+          <select
+            value={companyFilter}
+            onChange={e => { setCompanyFilter(e.target.value); setPage(1) }}
             className="px-3 py-3 rounded-2xl text-sm outline-none"
             style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a', border: '1px solid #eef0f2' }}>
             <option value="all">Toutes les entreprises</option>
@@ -427,19 +371,25 @@ export default function Users() {
           </select>
         )}
 
-        <select value={dateFilter} onChange={e => { setDateFilter(e.target.value); setPage(1) }}
+        <select
+          value={dateFilter}
+          onChange={e => { setDateFilter(e.target.value); setPage(1) }}
           className="px-3 py-3 rounded-2xl text-sm outline-none"
           style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a', border: '1px solid #eef0f2' }}>
           {dateFilters.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
         </select>
       </div>
 
+      {/* Layout table + panel */}
       <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+
+        {/* Table */}
         <div className={`flex-1 min-w-0 ${isMobile && showDetail ? 'hidden' : ''}`}>
           {paginated.length === 0 ? (
             <EmptyState icon="👤" title="Aucun utilisateur" message="Aucun utilisateur ne correspond à vos filtres" />
           ) : (
             <div className="bg-white rounded-2xl overflow-hidden" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
+              {/* Header table — desktop */}
               <div className="hidden md:grid" style={{ gridTemplateColumns: '1fr 140px 150px 120px 80px', borderBottom: '1px solid #f4f5f7', backgroundColor: '#fafbfc' }}>
                 {[
                   { label: 'Utilisateur', field: 'name' },
@@ -448,7 +398,8 @@ export default function Users() {
                   { label: 'Inscription', field: 'created_at' },
                   { label: 'Murs', field: null },
                 ].map(col => (
-                  <div key={col.label} onClick={col.field ? () => toggleSort(col.field) : undefined}
+                  <div key={col.label}
+                    onClick={col.field ? () => toggleSort(col.field) : undefined}
                     className="px-4 py-3 text-xs font-semibold uppercase tracking-wider"
                     style={{ color: sortField === col.field ? '#2BBFB3' : '#8a93a2', cursor: col.field ? 'pointer' : 'default' }}>
                     {col.label} {col.field && (sortField === col.field ? (sortDir === 'asc' ? '↑' : '↓') : '↕')}
@@ -456,16 +407,19 @@ export default function Users() {
                 ))}
               </div>
 
+              {/* Rows */}
               {paginated.map(u => {
                 const tc = typeConfig[u.userType] || typeConfig.free
                 const initials = `${u.firstName?.[0] || ''}${u.lastName?.[0] || u.email?.[0] || ''}`.toUpperCase()
                 return (
-                  <div key={u.id} onClick={() => selectUser(u)}
+                  <div key={u.id}
+                    onClick={() => selectUser(u)}
                     className="cursor-pointer transition-colors hover:bg-gray-50"
                     style={{
                       borderBottom: '1px solid #f4f5f7',
                       backgroundColor: selectedUser?.id === u.id ? '#f0faf9' : 'transparent',
                     }}>
+                    {/* Desktop row */}
                     <div className="hidden md:grid items-center" style={{ gridTemplateColumns: '1fr 140px 150px 120px 80px' }}>
                       <div className="px-4 py-3 flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ backgroundColor: tc.avatarBg }}>{initials}</div>
@@ -500,6 +454,7 @@ export default function Users() {
                       </div>
                     </div>
 
+                    {/* Mobile row */}
                     <div className="md:hidden px-4 py-3 flex items-center justify-between">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0" style={{ backgroundColor: tc.avatarBg }}>{initials}</div>
@@ -537,23 +492,136 @@ export default function Users() {
           )}
         </div>
 
+        {/* Panel latéral */}
         {(selectedUser && (!isMobile || showDetail)) && (
           <div className={`${isMobile ? 'w-full' : 'w-80'} flex-shrink-0`}>
             {isMobile && <button onClick={() => setShowDetail(false)} className="mb-4 text-sm font-medium flex items-center gap-2" style={{ color: '#2BBFB3' }}>← Retour à la liste</button>}
             <div className="bg-white rounded-2xl md:rounded-3xl p-5 md:p-6 sticky top-4" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
-              {detailsLoading && (
-                <p className="text-sm py-4 text-center" style={{ color: '#8a93a2' }}>Chargement du détail…</p>
-              )}
-              {detailsError && (
-                <p className="text-sm py-4 text-center" style={{ color: '#ef4444' }}>{detailsError}</p>
-              )}
-              {!detailsLoading && !detailsError && fullDetails && (
-                <UserDetailPanel user={selectedUser} fullDetails={fullDetails} onExport={handleExportRGPD} exporting={exporting} />
+              {selectedUser && selectedDetails && (
+                <div>
+                  {/* Header user */}
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold text-lg flex-shrink-0" style={{ backgroundColor: '#2BBFB3' }}>
+                      {`${selectedUser.firstName?.[0] || ''}${selectedUser.lastName?.[0] || selectedUser.email?.[0] || ''}`.toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-bold truncate" style={{ color: '#1a2b4a' }}>{selectedUser.firstName} {selectedUser.lastName}</h3>
+                        {selectedUser.authMethods?.map(m => {
+                          const c = authMethodConfig[m]
+                          return (
+                            <span key={m} className="inline-flex items-center justify-center text-xs font-bold flex-shrink-0"
+                              style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: c.textBg, color: c.color }}>
+                              {c.icon}
+                            </span>
+                          )
+                        })}
+                      </div>
+                      <p className="text-xs" style={{ color: '#8a93a2' }}>
+                        {selectedUser.gender === 'male' ? '♂' : selectedUser.gender === 'female' ? '♀' : '·'} · ID #{selectedUser.id}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Section Méthode de connexion */}
+                  <div className="mb-4">
+                    <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Méthode de connexion</p>
+                    <div className="rounded-xl p-3" style={{ backgroundColor: '#f4f5f7' }}>
+                      {selectedUser.authMethods?.map(m => {
+                        const c = authMethodConfig[m]
+                        const oauthData = m === 'google' ? selectedUser.google_oauth : m === 'facebook' ? selectedUser.facebook_oauth : null
+                        return (
+                          <div key={m} className="flex items-center gap-2 mb-1 last:mb-0">
+                            <span className="inline-flex items-center justify-center text-xs font-bold flex-shrink-0"
+                              style={{ width: '22px', height: '22px', borderRadius: '4px', backgroundColor: c.textBg, color: c.color }}>
+                              {c.icon}
+                            </span>
+                            <span className="text-sm font-semibold" style={{ color: '#1a2b4a' }}>{c.label}</span>
+                            {oauthData?.email && <span className="text-xs" style={{ color: '#8a93a2' }}>· {oauthData.email}</span>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Section Abonnement */}
+                  <div className="mb-4">
+                    <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Abonnement</p>
+                    <div className="rounded-xl p-3" style={{ backgroundColor: '#f4f5f7' }}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-semibold" style={{ color: '#1a2b4a' }}>{typeConfig[selectedUser.userType]?.label || 'Inconnu'}</span>
+                        {selectedDetails.usedCode && (
+                          <span className="text-xs px-2 py-0.5 rounded-lg" style={{ backgroundColor: '#e8f8f7', color: '#2BBFB3' }}>Actif</span>
+                        )}
+                      </div>
+                      {selectedUser.companyName && (
+                        <p className="text-xs" style={{ color: '#8a93a2' }}>Partenaire : {selectedUser.companyName}</p>
+                      )}
+                      {selectedDetails.usedCode && (
+                        <p className="text-xs mt-1 font-mono" style={{ color: '#8a93a2' }}>
+                          Code : <span style={{ color: '#1a2b4a' }}>{selectedDetails.usedCode.code}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Section Activité */}
+                  <div className="mb-4">
+                    <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Activité</p>
+                    <table className="w-full text-sm">
+                      <tbody>
+                        <tr>
+                          <td className="py-1" style={{ color: '#8a93a2' }}>Inscription</td>
+                          <td className="py-1 text-right" style={{ color: '#1a2b4a' }}>
+                            {new Date(selectedUser.created_at).toLocaleDateString('fr-FR')}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="py-1" style={{ color: '#8a93a2' }}>Genre</td>
+                          <td className="py-1 text-right" style={{ color: '#1a2b4a' }}>
+                            {selectedUser.gender === 'male' ? 'Homme' : selectedUser.gender === 'female' ? 'Femme' : '—'}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="py-1" style={{ color: '#8a93a2' }}>Tokens push actifs</td>
+                          <td className="py-1 text-right" style={{ color: '#1a2b4a' }}>
+                            {selectedUser.fcmTokens?.length || 0}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Section Technique pliable */}
+                  <details className="mb-4">
+                    <summary className="text-xs uppercase tracking-wider font-semibold cursor-pointer mb-2" style={{ color: '#8a93a2' }}>
+                      Détails techniques
+                    </summary>
+                    <div className="rounded-xl p-3 font-mono text-xs leading-relaxed" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>
+                      user_id : {selectedUser.id}<br/>
+                      firebase_id : {selectedUser.firebaseId || '—'}<br/>
+                      created_at : {selectedUser.created_at}<br/>
+                      fcm_tokens : {selectedUser.fcmTokens?.length || 0} actif(s)
+                    </div>
+                  </details>
+
+                  {/* Boutons d'action */}
+                  <div className="flex gap-2 pt-3 border-t" style={{ borderColor: '#f4f5f7' }}>
+                    <button
+                      onClick={handleExportRGPD}
+                      disabled={exporting}
+                      className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold"
+                      style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }}>
+                      {exporting ? 'Export...' : 'Export RGPD'}
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>
         )}
 
+        {/* Placeholder quand rien sélectionné — desktop */}
         {!selectedUser && !isMobile && (
           <div className="w-80 flex-shrink-0">
             <div className="bg-white rounded-3xl p-8 text-center sticky top-4" style={{ boxShadow: '0 4px 24px rgba(43,191,179,0.06)' }}>
@@ -568,136 +636,7 @@ export default function Users() {
   )
 }
 
-// ─── Panel détail utilisateur ─────────────────────────────────────
-function UserDetailPanel({ user, fullDetails, onExport, exporting }) {
-  const u = { ...user, ...fullDetails.user }
-  return (
-    <div>
-      <div className="flex items-center gap-3 mb-5">
-        <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold text-lg flex-shrink-0" style={{ backgroundColor: '#2BBFB3' }}>
-          {`${u.firstName?.[0] || ''}${u.lastName?.[0] || u.email?.[0] || ''}`.toUpperCase()}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <h3 className="font-bold truncate" style={{ color: '#1a2b4a' }}>{u.firstName} {u.lastName}</h3>
-            {user.authMethods?.map(m => {
-              const c = authMethodConfig[m]
-              return (
-                <span key={m} className="inline-flex items-center justify-center text-xs font-bold flex-shrink-0"
-                  style={{ width: '20px', height: '20px', borderRadius: '4px', backgroundColor: c.textBg, color: c.color }}>
-                  {c.icon}
-                </span>
-              )
-            })}
-          </div>
-          <p className="text-xs" style={{ color: '#8a93a2' }}>
-            {u.gender === 'male' ? '♂' : u.gender === 'female' ? '♀' : '·'} · ID #{u.id}
-          </p>
-        </div>
-      </div>
-
-      <div className="mb-4">
-        <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Méthodes de connexion</p>
-        <div className="rounded-xl p-3" style={{ backgroundColor: '#f4f5f7' }}>
-          {user.authMethods?.map(m => {
-            const c = authMethodConfig[m]
-            return (
-              <div key={m} className="flex items-center gap-2 mb-1 last:mb-0">
-                <span className="inline-flex items-center justify-center text-xs font-bold flex-shrink-0"
-                  style={{ width: '22px', height: '22px', borderRadius: '4px', backgroundColor: c.textBg, color: c.color }}>
-                  {c.icon}
-                </span>
-                <span className="text-sm font-semibold" style={{ color: '#1a2b4a' }}>{c.label}</span>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="mb-4">
-        <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Abonnement</p>
-        <div className="rounded-xl p-3" style={{ backgroundColor: '#f4f5f7' }}>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm font-semibold" style={{ color: '#1a2b4a' }}>{typeConfig[user.userType]?.label || 'Inconnu'}</span>
-            {fullDetails.usedCode && (
-              <span className="text-xs px-2 py-0.5 rounded-lg" style={{ backgroundColor: '#e8f8f7', color: '#2BBFB3' }}>Actif</span>
-            )}
-          </div>
-          {user.companyName && (
-            <p className="text-xs" style={{ color: '#8a93a2' }}>Partenaire : {user.companyName}</p>
-          )}
-          {fullDetails.usedCode && (
-            <p className="text-xs mt-1 font-mono" style={{ color: '#8a93a2' }}>
-              Code : <span style={{ color: '#1a2b4a' }}>{fullDetails.usedCode.code}</span>
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="mb-4">
-        <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: '#8a93a2' }}>Activité</p>
-        <table className="w-full text-sm">
-          <tbody>
-            <tr>
-              <td className="py-1" style={{ color: '#8a93a2' }}>Inscription</td>
-              <td className="py-1 text-right" style={{ color: '#1a2b4a' }}>
-                {u.created_at ? new Date(u.created_at).toLocaleDateString('fr-FR') : '—'}
-              </td>
-            </tr>
-            <tr>
-              <td className="py-1" style={{ color: '#8a93a2' }}>Genre</td>
-              <td className="py-1 text-right" style={{ color: '#1a2b4a' }}>
-                {u.gender === 'male' ? 'Homme' : u.gender === 'female' ? 'Femme' : '—'}
-              </td>
-            </tr>
-            <tr>
-              <td className="py-1" style={{ color: '#8a93a2' }}>Murs</td>
-              <td className="py-1 text-right" style={{ color: '#1a2b4a' }}>{fullDetails.stats.spacesCount}</td>
-            </tr>
-            <tr>
-              <td className="py-1" style={{ color: '#8a93a2' }}>Publications</td>
-              <td className="py-1 text-right" style={{ color: '#1a2b4a' }}>{fullDetails.stats.postsCount}</td>
-            </tr>
-            <tr>
-              <td className="py-1" style={{ color: '#8a93a2' }}>Réactions</td>
-              <td className="py-1 text-right" style={{ color: '#1a2b4a' }}>{fullDetails.stats.reactionsCount}</td>
-            </tr>
-            <tr>
-              <td className="py-1" style={{ color: '#8a93a2' }}>Alertes</td>
-              <td className="py-1 text-right" style={{ color: '#1a2b4a' }}>{fullDetails.stats.alertsCount}</td>
-            </tr>
-            <tr>
-              <td className="py-1" style={{ color: '#8a93a2' }}>Push activé</td>
-              <td className="py-1 text-right" style={{ color: '#1a2b4a' }}>{u.hasFcmToken ? 'Oui' : 'Non'}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <details className="mb-4">
-        <summary className="text-xs uppercase tracking-wider font-semibold cursor-pointer mb-2" style={{ color: '#8a93a2' }}>
-          Détails techniques
-        </summary>
-        <div className="rounded-xl p-3 font-mono text-xs leading-relaxed" style={{ backgroundColor: '#f4f5f7', color: '#8a93a2' }}>
-          user_id : {u.id}<br/>
-          firebase_id : {u.firebaseId || '—'}<br/>
-          created_at : {u.created_at}<br/>
-          push_active : {u.hasFcmToken ? 'oui' : 'non'}
-        </div>
-      </details>
-
-      <div className="flex gap-2 pt-3 border-t" style={{ borderColor: '#f4f5f7' }}>
-        <button onClick={onExport} disabled={exporting}
-          className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold"
-          style={{ backgroundColor: '#f4f5f7', color: '#1a2b4a' }}>
-          {exporting ? 'Export...' : 'Export RGPD'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ─── Générateur HTML RGPD (champs safe uniquement) ────────────────
+// ─── Générateur HTML RGPD ───────────────────────────
 function generateRGPDhtml(user, details, postDocs, reactionImages, dateExport) {
   const esc = v => v === null || v === undefined ? '—' : String(v).replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const fmtDate = d => d ? new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
@@ -722,10 +661,8 @@ function generateRGPDhtml(user, details, postDocs, reactionImages, dateExport) {
     </table>`
   }
 
-  const authSummary = []
-  if (user.hasGoogleOauth) authSummary.push('Google')
-  if (user.hasFacebookOauth) authSummary.push('Facebook')
-  if (authSummary.length === 0) authSummary.push('Email / Mot de passe')
+  // Authentification
+  const authMethod = user.google_oauth?.email ? 'Google OAuth' : user.facebook_oauth?.email ? 'Facebook OAuth' : 'Email / Mot de passe'
 
   return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Export RGPD — ${esc(user.firstName)} ${esc(user.lastName)}</title>
 <style>
@@ -742,7 +679,7 @@ function generateRGPDhtml(user, details, postDocs, reactionImages, dateExport) {
 
 <div class="legal">
   <strong>RGPD — Articles 15 et 20</strong><br/>
-  Ce document contient les données personnelles de l'utilisateur stockées par Héka, conformément au droit d'accès (article 15) et au droit à la portabilité (article 20) du Règlement Général sur la Protection des Données. Les jetons techniques (mot de passe, tokens push, identifiants OAuth bruts) ne sont pas inclus pour des raisons de sécurité.
+  Ce document contient l'intégralité des données personnelles de l'utilisateur stockées par Héka, conformément au droit d'accès (article 15) et au droit à la portabilité (article 20) du Règlement Général sur la Protection des Données.
 </div>
 
 ${section('1. Profil utilisateur', `
@@ -754,9 +691,18 @@ ${section('1. Profil utilisateur', `
   ${row('Genre', user.gender)}
   ${row('Date d\'inscription', fmtDate(user.created_at))}
   ${row('Photo de profil', user.photo?.url || user.photo || '—')}
-  ${row('Méthode(s) d\'authentification', authSummary.join(', '))}
+  ${row('Méthode d\'authentification', authMethod)}
   ${row('Firebase ID', user.firebaseId)}
-  ${row('Notifications push', user.hasFcmToken ? 'Activées' : 'Désactivées')}
+  ${row('Tokens FCM (push)', user.fcmTokens?.length ? user.fcmTokens.join(', ') : '—')}
+  ${row('Magic Link — Token', user.magic_link?.token || '—')}
+  ${row('Magic Link — Expiration', fmtDate(user.magic_link?.expiration))}
+  ${row('Magic Link — Utilisé', user.magic_link?.used === true ? 'Oui' : user.magic_link?.used === false ? 'Non' : '—')}
+  ${user.google_oauth?.email ? row('Google OAuth — Email', user.google_oauth.email) : ''}
+  ${user.google_oauth?.name ? row('Google OAuth — Nom', user.google_oauth.name) : ''}
+  ${user.google_oauth?.id ? row('Google OAuth — ID', user.google_oauth.id) : ''}
+  ${user.facebook_oauth?.email ? row('Facebook OAuth — Email', user.facebook_oauth.email) : ''}
+  ${user.facebook_oauth?.name ? row('Facebook OAuth — Nom', user.facebook_oauth.name) : ''}
+  ${user.facebook_oauth?.id ? row('Facebook OAuth — ID', user.facebook_oauth.id) : ''}
 `)}
 
 ${section('2. Code d\'activation partenaire', details.usedCode ? `
@@ -771,6 +717,9 @@ ${section('3. Fiche bénéficiaire', details.beneficiary ? `
   ${row('Prénom', details.beneficiary.first_name)}
   ${row('Nom', details.beneficiary.last_name)}
   ${row('Email', details.beneficiary.email)}
+  ${row('Département', details.beneficiary.department)}
+  ${row('Code', details.beneficiary.code)}
+  ${row('Statut', details.beneficiary.status)}
   ${row('Date d\'envoi', fmtDate(details.beneficiary.sent_at))}
 ` : '<p style="color:#8a93a2;font-size:13px;font-style:italic;">Aucune fiche bénéficiaire</p>')}
 
@@ -812,7 +761,3 @@ ${section('9. Alertes / Signalements', table(
 
 </body></html>`
 }
-
-// Export non utilisé en runtime mais conservé pour cohérence (sanitizeForDisplay
-// peut servir si on ajoute un drawer JSON détaillé en U4).
-export { sanitizeForDisplay }

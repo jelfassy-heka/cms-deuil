@@ -537,39 +537,46 @@ Adapter le frontend au nouvel endpoint Xano sécurisé `GET /me/partner_membersh
 
 ### Prochaines actions backend Xano
 
-Ordre recommandé après validation du Batch 4 :
+Ordre corrigé après inspection Xano :
 
-1. **Batch 5 — Emails / codes / secrets / ownership**
-   - `POST /send-email`
-   - `POST /send-code-email`
-   - `POST /plan-activation-code` si encore non durci
-   - validation ownership destinataire / code / `partner_id`
-   - sécurisation de la clé Brevo
-   - rate limiting léger si possible
-   - audit préparatoire si disponible
+1. **Xano 6.2A — Créer `GET /me/partner_membership` uniquement**
+   - Workspace CMS.
+   - Groupe API recommandé : Auth `api:IS_IPWIL` ou CMS `api:M9mahf09` selon faisabilité Xano.
+   - Objectif : retourner uniquement les memberships du token.
+   - Ne pas modifier `auth/signup`.
+   - Ne pas activer le filtrage `partner_id` global.
+   - Ne pas modifier Cocon.
 
-2. **Batch 6 — Audit logs**
-   - création table `audit_logs`
-   - endpoint admin `/admin/audit-logs`
-   - fonction `create_audit_log`
-   - branchement sur actions critiques
+2. **Lot 7 — Frontend bearer compatibility layer**
+   - Ajouter `Authorization: Bearer ...` aux appels CMS/App/Auth concernés.
+   - Remplacer le `getAll('partner_members')` du login par `/me/partner_membership`.
+   - Ajouter le bearer à `auth/signup`, aux appels partenaires et aux fetch Cocon.
+   - Ce lot doit être livré pendant que les endpoints Xano acceptent encore les appels existants.
 
-3. **Batch 7 — Rate limiting / auth hardening**
+3. **Xano 6.2B — Restreindre `auth/signup` aux bearers admin**
+   - À faire seulement après adaptation frontend.
+
+4. **Xano 6.1 — Activer le filtrage `partner_id` serveur**
+   - À faire après Lot 7, sinon risque de casser l’espace Partenaire.
+
+5. **Xano 6.3 — Cocon admin hardening**
+   - À traiter seulement après décision d’architecture.
+   - Ne pas déplacer ni modifier les endpoints App existants sans analyse d’impact mobile.
+   - Options à étudier : endpoints CMS protégés dédiés, proxy CMS, validation inter-workspace, ou sécurisation App si impact mobile nul.
+
+6. **Xano 6.4 — Créer `audit_logs` et journaliser les actions critiques**
+
+7. **Xano 6.5 — Mettre en place rate limiting**
    - `auth/login`
    - `forgot-password`
-   - `verify-password`
-   - endpoints email/code
+   - `send-email`
+   - `send-code-email`
 
-4. **Batch 8 — Cocon / App mobile**
-   - uniquement après analyse d’impact mobile
-   - ne jamais modifier un endpoint App existant sans validation
-   - créer des endpoints CMS dédiés si nécessaire
+8. **Xano 6.6 — Brevo + migration `partnerId` vers `partner_id`**
+   - Webhooks Brevo.
+   - Compat temporaire `partnerId` / `partner_id`.
+   - Lot frontend de réalignement ensuite.
 
-5. **Batch 9 — Alertes IA**
-   - endpoints admin CMS autour de `ai-messages.alert`
-   - table `ai_alert_reviews`
-   - visibilité admin CMS uniquement
-   
 ### Prochaines actions frontend
 
 À planifier dans un lot dédié après Xano 6.2A :
@@ -586,124 +593,3 @@ Ordre recommandé après validation du Batch 4 :
 
 3. **Lot frontend post-migration `partner_id`**
    - Remplacer `partnerId` par `partner_id` sur `plan-activation-code` après compat backend.
-
-   ## Xano 6.1 — Batch 4 — Admin-only CRM/CMS restants
-
-### Statut
-
-Validé.
-
-### Objectif
-
-Sécuriser les endpoints CRM/CMS restants manipulant des données internes ou multi-partenaires, en les réservant aux admins Héka.
-
-### Périmètre
-
-Workspace concerné :
-
-- `CMS_HEKA_CLONE` — workspace `#17`
-- API group CMS — `api:M9mahf09`
-
-Workspaces non touchés :
-
-- `TEST_HEKA_CLONE_TEST` — workspace `#16`
-- `HEKA` — workspace `#9`
-- Workspace App / mobile
-- Cocon
-
-### Endpoints publiés
-
-17 endpoints ont été publiés avec `auth=300 (cms_users)` :
-
-#### crm_activity
-
-- `GET /crm_activity`
-- `GET /crm_activity/{id}`
-- `POST /crm_activity`
-- `PATCH /crm_activity/{id}`
-- `DELETE /crm_activity/{id}`
-
-#### contracts
-
-- `POST /contracts`
-- `PATCH /contracts/{id}`
-- `DELETE /contracts/{id}`
-
-#### contacts
-
-- `POST /contacts`
-- `PATCH /contacts/{id}`
-- `DELETE /contacts/{id}`
-
-#### code_request — traitement admin
-
-- `PATCH /code_request/{id}`
-- `PUT /code_request/{id}`
-- `DELETE /code_request/{id}`
-
-#### partners — actions admin critiques
-
-- `POST /partners`
-- `PUT /partners/{id}`
-- `DELETE /partners/{id}`
-
-### Sécurité appliquée
-
-Tous les endpoints concernés appliquent désormais :
-
-- bearer `cms_users` obligatoire ;
-- résolution du contexte via `security/resolve-partner-context` ;
-- accès réservé aux admins CMS ;
-- refus des partenaires sur les actions CRM/admin ;
-- `404` contrôlé sur les endpoints `{id}` ;
-- protection spécifique sur `DELETE /partners/{id}` :
-  - interdiction explicite de supprimer `partners.id=1` ;
-  - contrôle FK sur 6 tables :
-    - `partner_members.partner_id`
-    - `Beneficiaries.partner_id`
-    - `contracts.partner_id`
-    - `contacts.partner_id`
-    - `code_request.partner_id`
-    - `plan-activation-code.partnerId`
-
-### Bugs corrigés
-
-Trois endpoints `POST` créaient auparavant des lignes quasi vides avec seulement `created_at`.
-
-Corrections appliquées :
-
-- `POST /contracts` : mapping complet des 9 champs du schéma.
-- `POST /contacts` : mapping complet des 7 champs du schéma.
-- `POST /crm_activity` : mapping complet des 7 champs du schéma.
-
-### Tests réalisés
-
-- Sans bearer : `401` sur 17/17 endpoints.
-- Bearer partenaire : `403` sur les endpoints admin-only.
-- Bearer admin : opérations attendues validées.
-- `{id}` inexistant : `404` contrôlé.
-- `PATCH` partiel : champs non envoyés préservés.
-- `POST` / `PUT` : persistance des champs validée.
-- `DELETE /partners/1` : refus explicite validé.
-- Données temporaires : toutes nettoyées.
-- Sanity check final : 15/15 tests OK.
-
-### Hors périmètre conservé
-
-- `send-email` non touché.
-- `send-code-email` non touché.
-- Aucun `audit_logs` créé.
-- Aucun rate limiting ajouté.
-- Aucun endpoint Cocon modifié.
-- Aucun endpoint App/mobile modifié.
-- Aucun changement frontend.
-- Aucune migration `partnerId` vers `partner_id`.
-
-### Réserves / backlog
-
-- `send-email` et `send-code-email` restent à sécuriser.
-- La clé Brevo reste à sortir du XanoScript si elle est encore codée en dur.
-- `audit_logs` reste à créer.
-- Le rate limiting reste à traiter.
-- Les endpoints Cocon App/mobile restent hors périmètre et nécessitent un lot dédié.
-- Les alertes IA restent à traiter via endpoints admin dédiés.
