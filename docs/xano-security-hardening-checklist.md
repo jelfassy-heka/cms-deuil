@@ -16,14 +16,15 @@ Ce fichier se complète de [`docs/api-endpoint-inventory.md`](api-endpoint-inven
 
 **Convention :** chaque ligne est à cocher après vérification réelle dans Xano : test d’autorisation, test de payload, test de limite, publication contrôlée de l’endpoint.
 
+
 ## A. Authentification / autorisation
 
 ### A.1 Endpoints admin réservés aux admins
 
 - [ ] Tous les endpoints CRUD du groupe API **CMS** (`api:M9mahf09`) qui exposent des données multi-partenaires sont protégés par une fonction Xano qui vérifie que `cms_users.user_type === 'admin'`, sauf endpoints explicitement destinés aux partenaires et filtrés par `partner_id`.
-- [ ] L’endpoint `/auth/signup` du groupe API **Auth** (`api:IS_IPWIL`) exige un bearer admin. Côté frontend, le lot 7 transmet déjà le bearer admin sur cet appel ; il reste à activer le contrôle côté Xano (Xano 6.2B).
+- [ ] L’endpoint `/auth/signup` du groupe API **Auth** (`api:IS_IPWIL`) exige un bearer admin. Le frontend appelle encore cet endpoint sans bearer depuis `AdminAccounts.jsx` : à corriger dans un lot frontend coordonné.
 - [ ] Les endpoints Cocon `admin-*` du groupe API **App** (`api:I-Ku3DV8`) doivent être traités avec prudence : ils sont dans le workspace App et peuvent avoir un impact sur l’application mobile. Ne pas les déplacer ni les modifier sans analyse d’impact.
-- [ ] Pour Cocon, préférer une stratégie dédiée : nouveaux endpoints CMS protégés, endpoints proxy CMS, ou sécurisation des endpoints App existants uniquement après confirmation qu’ils ne sont pas consommés par le mobile. Côté frontend, le lot 7 transmet déjà le bearer sur tous les fetch Cocon ; le contrôle côté Xano reste à activer.
+- [ ] Pour Cocon, préférer une stratégie dédiée : nouveaux endpoints CMS protégés, endpoints proxy CMS, ou sécurisation des endpoints App existants uniquement après confirmation qu’ils ne sont pas consommés par le mobile.
 
 ### A.2 Endpoints partenaire filtrés par partner_id
 
@@ -49,13 +50,69 @@ Ce fichier se complète de [`docs/api-endpoint-inventory.md`](api-endpoint-inven
 
 - [ ] `auth/login` : rate limit, détection brute force, message d’erreur générique.
 - [ ] `forgot-password` : rate limit + message générique, sans révéler si l’email existe.
-- [x] Le frontend résolvait le `partnerId` en listant tous les `partner_members` après login. **Lot 7** : remplacé par `/me/partner_membership`.
-- [x] Créer en priorité un endpoint sécurisé `GET /me/partner_membership` qui retourne uniquement les memberships du token. **Xano 6.2A — validé.**
-- [x] Sous-lot **Xano 6.2A** — créer `/me/partner_membership` uniquement, sans encore restreindre `auth/signup` et sans activer le filtrage `partner_id` global. **Validé.**
-- [x] Après création de `/me/partner_membership`, créer un lot frontend dédié pour remplacer le `getAll('partner_members')` du login. **Lot 7 — livré localement, à pousser.**
+- [ ] Le frontend résout actuellement le `partnerId` en listant tous les `partner_members` après login. Ce comportement expose de la PII.
+- [ ] Créer en priorité un endpoint sécurisé `GET /me/partner_membership` qui retourne uniquement les memberships du token.
+- [ ] Sous-lot recommandé : **Xano 6.2A** — créer `/me/partner_membership` uniquement, sans encore restreindre `auth/signup` et sans activer le filtrage `partner_id` global.
+- [ ] Après création de `/me/partner_membership`, créer un lot frontend dédié pour remplacer le `getAll('partner_members')` du login.
 - [ ] `auth/login` : définir explicitement les inputs attendus `email` et `password` pour éviter la fuite d’un nom interne Xano comme `field_value` sur payload malformé.
 - [ ] `auth/login` : remplacer les retours `ERROR_FATAL` sur credentials invalides par une réponse propre et uniforme de type 401 / unauthorized.
 - [ ] `auth/login` : vérifier que les cas “email inconnu”, “mot de passe incorrect” et “mot de passe manquant” ont une réponse homogène, sans fuite par message ou par timing.
+- [x] Créer un endpoint sécurisé `GET /me/partner_membership` qui retourne uniquement les memberships du token. Fait en Xano 6.2A.
+- [ ] Adapter le frontend pour remplacer le `getAll('partner_members')` du login par `/me/partner_membership`.
+
+## État d’avancement — Hardening Xano
+
+### Validé
+
+- [x] `GET /me/partner_membership` créé, publié et testé.
+- [x] `POST /auth/signup` restreint aux bearers admin.
+- [x] Fonction `security/resolve-partner-context` créée et testée.
+- [x] Index utiles créés sur `partner_id`, `partnerId`, `user_email`.
+- [x] Lectures partner-scoped sécurisées :
+  - `GET /beneficiaries`
+  - `GET /beneficiaries/{id}`
+  - `GET /contracts`
+  - `GET /contracts/{id}`
+  - `GET /code_request`
+  - `GET /code_request/{id}`
+  - `GET /partner_members`
+  - `GET /partner_members/{id}`
+  - `GET /contacts`
+  - `GET /contacts/{id}`
+  - `GET /plan-activation-code`
+- [x] Lectures `partners` sécurisées :
+  - `GET /partners`
+  - `GET /partners/{id}`
+- [x] Writes P0 sécurisés :
+  - `POST /beneficiaries`
+  - `PATCH /beneficiaries/{id}`
+  - `POST /code_request`
+- [x] Gouvernance partenaire sécurisée :
+  - `POST /partner_members`
+  - `PATCH /parnter_members/{id}`
+  - `DELETE /partner_members/{id}`
+  - `PATCH /partners/{id}`
+- [x] Admin-only CRM/CMS restants sécurisés :
+  - `crm_activity`
+  - `contracts`
+  - `contacts`
+  - traitement admin `code_request`
+  - `POST /partners`
+  - `PUT /partners/{id}`
+  - `DELETE /partners/{id}`
+
+### À traiter ensuite
+
+- [ ] `POST /send-email`
+- [ ] `POST /send-code-email`
+- [ ] `POST /plan-activation-code` si encore non durci
+- [ ] secrets Brevo hors XanoScript
+- [ ] ownership code / destinataire / partenaire
+- [ ] rate limiting email/code
+- [ ] audit logs
+- [ ] Cocon admin hardening
+- [ ] alertes IA admin CMS
+
 
 ## B. Cocon
 
@@ -197,14 +254,40 @@ Pour chaque endpoint listé dans `api-endpoint-inventory.md`, valider :
 Une fois ce hardening complet :
 
 1. Mettre à jour cette checklist en cochant chaque ligne validée.
-2. ~~Ouvrir un lot frontend de micro-corrections pour aligner les appels qui peuvent maintenant porter un bearer token~~ — **Lot 7 livré (localement)** : `xano.js`, `xanoApp.js`, `partnerApi.js`, `AdminAccounts.jsx` (auth/signup) et `Cocon.jsx` (admin-*) transmettent désormais `Authorization: Bearer <token>` quand un token est présent. Aucun payload, URL ou méthode HTTP n'a été modifié.
+2. Ouvrir un lot frontend de **micro-corrections** pour aligner les appels qui peuvent maintenant porter un bearer token (ex. `xano.js` et `xanoApp.js` n'envoient pas de header Authorization aujourd'hui — un lot dédié pourrait les ajouter sans changer les payloads).
 3. Documenter dans `audit-implementation-plan.md` le passage en revue.
 
-## H. Statut consolidé après Xano 6.2A + Lot 7
+## Emails, codes et Brevo — Batch 5 à venir
 
-- ✅ **Xano 6.2A** — `GET /me/partner_membership` créé, publié, testé (sans bearer 401, bearer invalide 401, partenaire avec membership OK, admin pur `[]`).
-- ✅ **Lot 7 — Frontend bearer compatibility layer** — livré localement (lint OK, build OK, dev OK). Login partenaire utilise `/me/partner_membership`, plus de `getAll('partner_members')` ni de filtrage côté client par `user_email`. Bearer transmis sur l'ensemble des appels sensibles.
-- ⏳ **Xano 6.2B** — `auth/signup` à restreindre aux bearers admin (frontend déjà compatible).
-- ⏳ **Xano 6.1** — filtrage `partner_id` serveur à activer sur les endpoints partenaires (frontend déjà compatible).
-- ⏳ **Xano 6.3** — sécurisation Cocon à instruire après décision d'architecture (frontend déjà compatible côté envoi de bearer).
-- ⏳ **Xano 6.4 / 6.5 / 6.6** — audit logs, rate limiting, Brevo / migration `partnerId`.
+### Objectif
+
+Sécuriser les endpoints qui envoient des emails, manipulent des codes d’accès ou exposent une clé Brevo.
+
+Endpoints à inspecter :
+
+- `POST /send-email`
+- `POST /send-code-email`
+- `POST /plan-activation-code` si encore non durci
+- autres endpoints liés à génération / envoi de codes si présents
+
+### Contrôles attendus
+
+- Bearer obligatoire.
+- Admin ou partenaire autorisé selon le template / l’action.
+- Le partenaire ne peut envoyer un email qu’à un destinataire appartenant à son `partner_id`.
+- Le partenaire ne peut envoyer un code que si le code appartient à son `partner_id`.
+- Le backend ne doit jamais faire confiance au `partner_id` client.
+- `send-code-email` doit valider :
+  - le code ;
+  - le bénéficiaire ;
+  - le destinataire ;
+  - le `partner_id` ;
+  - le statut éventuel du code.
+- `send-email` doit valider :
+  - le template ;
+  - le destinataire ;
+  - le rôle de l’acteur ;
+  - le périmètre partenaire si applicable.
+- Toute clé Brevo codée en dur doit être remplacée par une variable secrète Xano.
+- Ajouter du rate limiting si possible sans modifier les contrats frontend.
+- Ne pas envoyer d’email réel pendant les tests sauf validation explicite.

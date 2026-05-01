@@ -118,3 +118,29 @@ Pour mémoire, ces données existent ou seront produites en dehors de Xano :
 - Tous les noms techniques sont **suggestifs** ; le backend reste libre de choisir une convention cohérente avec l'existant (ex. `snake_case` pour les nouvelles tables — la divergence `partnerId` vs `partner_id` actuelle dans `plan-activation-code` est un legacy à ne pas reproduire, voir `docs/api-endpoint-inventory.md`).
 - Aucun de ces champs n'est codé côté frontend dans ce lot. L'affichage suivra dans des lots dédiés une fois la donnée disponible et stable côté Xano.
 - Les dépendances Brevo / RevenueCat / Bridge App restent à arbitrer projet par projet ; ce document ne propose **pas** d'implémentation.
+
+## État des données email / codes après hardening CMS
+
+Les endpoints CRM/CMS principaux sont désormais durcis, mais les données email avancées restent à produire.
+
+À ce stade, ne pas afficher comme données réelles :
+
+- email ouvert ;
+- email cliqué ;
+- bounce ;
+- délivrabilité ;
+- date d’activation précise ;
+- relance recommandée ;
+- adoption par département ;
+- cohorte d’envoi ;
+- statut Brevo détaillé.
+
+Ces données nécessitent le Batch 5 ou des lots ultérieurs :
+
+- sécurisation `send-email` ;
+- sécurisation `send-code-email`;
+- branchement Brevo ;
+- stockage des `message_id` ;
+- table d’événements email ;
+- webhooks open / click / bounce ;
+- mapping code / bénéficiaire / partenaire.
