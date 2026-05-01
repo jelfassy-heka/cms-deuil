@@ -33,25 +33,26 @@ Recommandations (à arbitrer dans un lot dédié, pas dans le lot 6) :
 
 ### 1.2 Login flow
 
-Étapes ([context/AuthContext.jsx:29-112](../src/context/AuthContext.jsx#L29)) :
+Étapes (lot 7 — [context/AuthContext.jsx](../src/context/AuthContext.jsx)) :
 
-1. `POST auth/login` (workspace Auth) → `authToken`.
+1. `POST auth/login` (groupe API Auth `api:IS_IPWIL`) → `authToken`.
 2. `GET auth/me` avec bearer → `user_type`, `email`, `name`, `is_first_login`.
 3. Vérification croisée `selectedRole` (« admin » ou « partenaire ») vs `user_type` retourné par `auth/me`.
-4. Si partenaire : `xano.getAll('partner_members')` (workspace CMS) puis filtrage côté client par `user_email`.
+4. Si partenaire : `GET /me/partner_membership` (groupe API Auth, bearer obligatoire). L'endpoint ne retourne que les memberships du token (`member_id`, `partner_id`, `role`, `status`, `partner_name`). Le frontend sélectionne le premier membership actif (`status === 'active'`) si présent, sinon le premier. Plus aucun `getAll('partner_members')`, plus de filtrage côté client par `user_email`.
 5. Persistence localStorage + setState.
 
 Garde-fous présents :
 
 - ✅ Refus de login si l'utilisateur sélectionne « Admin » alors que `user_type !== 'admin'` (et inversement).
-- ✅ Refus de login partenaire si aucun `partner_members` ne correspond à l'email.
-- ✅ Token bearer transmis pour `auth/me`.
+- ✅ Refus de login partenaire si `/me/partner_membership` ne retourne aucun membership.
+- ✅ Token bearer transmis pour `auth/me` et `/me/partner_membership`.
 - ✅ Le frontend ne décide pas du `user_type` : il est lu côté serveur (mais doit être protégé en écriture).
+- ✅ Plus aucune liste complète `partner_members` exposée au navigateur au moment du login.
 
 Limites :
 
-- ⚠️ **Le filtrage `partner_members` se fait côté client après un `getAll`** non filtré → le navigateur reçoit tous les membres. Risque PII massif si le backend ne filtre pas. Voir checklist Xano §A.5.
 - ⚠️ **Pas de mécanisme `auth/me` au refresh** : si le token est révoqué côté serveur, l'app continue d'utiliser le `user` localStorage tant qu'aucun appel n'échoue. À rendre plus strict une fois `auth/me` ajouté à l'init de session.
+- ⚠️ Le filtrage `partner_id` serveur sur les endpoints CMS partenaires (`/beneficiaries`, `/contracts`, etc.) n'est **pas encore activé** côté Xano (Xano 6.1 à venir). Le bearer ajouté au lot 7 prépare ce contrôle ; tant qu'il n'est pas en place, la sécurité repose sur le fait que le client ne forge pas de requête.
 
 ### 1.3 Logout
 
@@ -65,29 +66,6 @@ Garde-fous :
 
 - ✅ Pas d'appel backend de logout (pas de session côté serveur à invalider) — limitation acceptée tant que les tokens ont un TTL court.
 - ⚠️ Pas de signal aux autres onglets ouverts (un autre onglet conserve la session). À envisager via `BroadcastChannel` ou un `storage` event listener si besoin.
-
-## État après Batch 4 Xano
-
-Le backend Xano CMS applique désormais des contrôles serveur sur la majorité des endpoints CRM/CMS :
-
-- authentification bearer `cms_users` ;
-- contrôle rôle admin ;
-- contrôle `partner_id` serveur ;
-- refus des accès cross-partner ;
-- refus des partenaires sur les endpoints admin-only ;
-- protection de suppression du partenaire de référence `partners.id=1` ;
-- contrôle FK avant suppression partenaire.
-
-Conséquence UI :
-
-Le frontend doit gérer proprement les statuts de sécurité :
-
-- `401` : session expirée ou token absent ;
-- `403` : accès non autorisé ;
-- `404` : donnée inexistante ou hors périmètre ;
-- `500` : erreur serveur à signaler, pas à masquer.
-
-Le frontend ne doit pas contourner une erreur 403 en rechargeant une liste globale ou en utilisant un `partner_id` local.
 
 ## 2. Routes protégées
 
@@ -138,12 +116,17 @@ useEffect(() => {
 Vérifications côté client :
 
 - ✅ `user_type === 'admin'` côté `auth/me` est la source côté client.
-- ⚠️ Tous les appels CRUD admin (`xano.getAll`, etc.) **partent sans header Authorization** dans `lib/xano.js`. Le backend doit donc protéger les endpoints autrement (session implicite Xano, IP, ou re-validation par un proxy).
+- ✅ Depuis le lot 7, `lib/xano.js` et `lib/xanoApp.js` transmettent automatiquement `Authorization: Bearer <token>` quand `localStorage.heka_auth_token` est présent (helper `getAuthHeaders`). Aucune URL, méthode HTTP ni payload n'a été modifié — le backend Xano ignore actuellement le header tant qu'il n'est pas durci, mais il est désormais disponible pour Xano 6.1 / 6.2B / 6.3.
+- ✅ `auth/signup` appelé depuis `AdminAccounts.jsx` transmet maintenant le bearer admin si dispo (Xano 6.2B pourra brancher le contrôle sans changement frontend supplémentaire).
+- ✅ Les fetch Cocon (`admin-subject-*`, `admin-session-*`, `admin-cut-*`, `admin-session-delete`) transmettent le bearer admin. `Content-Type` n'est jamais fixé manuellement sur les multipart (boundaries gérées par le navigateur).
+- ⚠️ Le contrôle d'autorisation effectif reste à activer côté Xano (workspaces CMS et App). Tant que ce n'est pas fait, le bearer est un signal sans portée.
 - ⚠️ Aucune action admin n'inclut un challenge d'authentification fort, à part deux exceptions `verify-password` (génération de codes, suppression Cocon).
 
-Recommandations (lot dédié) :
+Recommandations (lots backend dédiés) :
 
-- Faire transiter le bearer token sur `xano.js` et `xanoApp.js` une fois Xano configuré pour l'exiger.
+- Xano 6.2B : restreindre `auth/signup` aux bearers admin.
+- Xano 6.1 : activer le filtrage `partner_id` serveur sur les endpoints partenaires.
+- Xano 6.3 : durcir les endpoints Cocon (workspace App) avec analyse d'impact mobile préalable, sans déplacer brutalement les endpoints existants.
 - Ajouter un `verify-password` (ou MFA) pour les actions vraiment irréversibles : suppression de partenaire, suppression d'admin, signup admin.
 
 ## 4. Accès partenaire
@@ -182,31 +165,26 @@ Recommandations :
 6. **Rate limit** sur `auth/login`, `forgot-password`, endpoints d'envoi.
 7. **Audit logs** (table dédiée + journalisation systématique).
 8. **CORS strict** sur les origines Vercel autorisées.
-9. `auth/login` retourne actuellement des erreurs techniques sur certains payloads malformés, notamment une fuite du nom interne `field_value`. À corriger côté Xano dans le lot rate limiting / login hardening, sans modifier le frontend tant que le contrat `email + password → authToken` reste stable.
 
 ## 6.1 Ordre opérationnel recommandé après inspection Xano
 
 L’inspection Xano a confirmé que :
 
-- le frontend actuel ne transmet pas encore de bearer sur la majorité des appels CMS/App ;
 - `auth/signup` est encore public côté backend ;
 - les endpoints CMS principaux ne filtrent pas encore systématiquement par `partner_id` serveur ;
 - les endpoints Cocon vivent dans le workspace App, alors que l’auth admin CMS est portée par `cms_users` dans le workspace CMS.
 
-Ordre recommandé :
+État opérationnel mis à jour :
 
-1. **Xano 6.2A** — créer `GET /me/partner_membership` uniquement.  
-   Objectif : remplacer plus tard le `getAll('partner_members')` du login sans casser le frontend actuel.
+- ✅ **Xano 6.2A** — `GET /me/partner_membership` créé et publié. Bearer obligatoire, réponse limitée aux memberships du token.
+- ✅ **Lot 7 — Frontend bearer compatibility** — livré (à pousser) : `getAll('partner_members')` du login remplacé par `/me/partner_membership` ; bearer transmis automatiquement par `xano.js` et `xanoApp.js` ; bearer ajouté aux fetch custom partenaires (`send-email`, `send-code-email`), à `auth/signup` et aux fetch Cocon (`admin-*`).
 
-2. **Lot frontend bearer compatibility** — ajouter le bearer aux clients API et remplacer le login membership par `/me/partner_membership`.
+Ordre restant :
 
-3. **Xano 6.2B** — restreindre `auth/signup` aux bearers admin.
-
-4. **Xano 6.1** — activer le filtrage `partner_id` serveur sur les endpoints partenaires.
-
-5. **Xano 6.3** — traiter Cocon après décision d’architecture dédiée, sans modifier brutalement les endpoints App existants.
-
-6. **Xano 6.4 / 6.5 / 6.6** — audit logs, rate limiting, Brevo, migration `partnerId` vers `partner_id`.
+1. **Xano 6.2B** — restreindre `auth/signup` aux bearers admin (frontend déjà compatible).
+2. **Xano 6.1** — activer le filtrage `partner_id` serveur sur les endpoints partenaires (frontend déjà compatible).
+3. **Xano 6.3** — traiter Cocon après décision d’architecture dédiée, sans modifier brutalement les endpoints App existants.
+4. **Xano 6.4 / 6.5 / 6.6** — audit logs, rate limiting, Brevo, migration `partnerId` vers `partner_id`.
 
 Le frontend ne doit pas être considéré comme une couche de sécurité. Les protections critiques doivent être appliquées côté Xano.
 
@@ -224,15 +202,3 @@ Le frontend ne doit pas être considéré comme une couche de sécurité. Les pr
 ## 8. Conclusion
 
 Les garde-fous frontend en place sont cohérents avec une SPA classique : routage protégé par état React, persistance localStorage, redirections automatiques. Ils suffisent à empêcher un utilisateur honnête de tomber au mauvais endroit, mais **ils ne protègent pas contre une requête forgée**. La sécurité critique repose entièrement sur le hardening Xano, dont la checklist est dans `docs/xano-security-hardening-checklist.md`.
-
-## Recommandations UI post-hardening
-
-Les maquettes validées restent la source de vérité UI, mais l’intégration doit tenir compte du hardening Xano :
-
-- prévoir des états vides en cas de liste filtrée par rôle ;
-- prévoir un message clair si l’utilisateur n’a pas accès à une donnée ;
-- ne pas afficher de métriques email tant que Brevo n’est pas branché ;
-- ne pas afficher d’audit log serveur tant que `audit_logs` n’existe pas ;
-- ne pas exposer les alertes IA côté partenaire ;
-- ne pas faire confiance au `partner_id` stocké côté client ;
-- ne pas inventer des données d’adoption ou d’activation.
