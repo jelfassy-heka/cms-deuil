@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
 import xano from '../../lib/xano'
+import { getAppUsersStats, expandUsersStatsToSyntheticArray } from '../../api/cmsBridgeApi'
 import { SparklineChart, buildSparklineData } from '../../components/SharedUI'
 import Partners from './Partners'
 import CRM from './CRM'
@@ -13,6 +14,8 @@ import AllBeneficiaries from './AllBeneficiaries'
 import Analytics from './Analytics'
 import NotificationCenter from './NotificationCenter'
 import GlobalSearch from './GlobalSearch'
+
+
 // Cocon est l'écran le plus volumineux (~2k lignes) ; on le charge à la demande
 // pour qu'il ne pèse pas sur le bundle initial admin.
 const Cocon = lazy(() => import('./Cocon'))
@@ -24,8 +27,6 @@ function CoconFallback() {
     </div>
   )
 }
-
-const APP_USERS_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8/app-users'
 
 const navItems = [
   { label: 'Tableau de bord', icon: 'dashboard', path: 'dashboard' },
@@ -185,15 +186,16 @@ export default function AdminDashboard() {
     const fetchAll = async () => {
       setLoading(true)
       try {
-        const [partners, codes, requests, users, contracts, beneficiaries, members] = await Promise.all([
+        const [partners, codes, requests, usersStats, contracts, beneficiaries, members] = await Promise.all([
           xano.getAll('partners'),
           xano.getAll('plan-activation-code'),
           xano.getAll('code_request'),
-          fetch(APP_USERS_URL).then(r => r.json()),
+          getAppUsersStats(),
           xano.getAll('contracts').catch(() => []),
           xano.getAll('beneficiaries').catch(() => []),
           xano.getAll('partner_members').catch(() => []),
         ])
+        const users = expandUsersStatsToSyntheticArray(usersStats)
         setDatasets({ partners, codes, requests, users, contracts, beneficiaries, members })
       } catch (err) {
         console.error('Erreur chargement données:', err)
@@ -208,11 +210,12 @@ export default function AdminDashboard() {
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        const [requests, users, codes] = await Promise.all([
+        const [requests, usersStats, codes] = await Promise.all([
           xano.getAll('code_request'),
-          fetch(APP_USERS_URL).then(r => r.json()),
+          getAppUsersStats(),
           xano.getAll('plan-activation-code'),
         ])
+        const users = expandUsersStatsToSyntheticArray(usersStats)
         setDatasets(prev => ({ ...prev, requests, users, codes }))
       } catch { /* silencieux */ }
     }, 60000)

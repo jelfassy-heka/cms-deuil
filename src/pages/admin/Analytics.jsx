@@ -4,9 +4,8 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend
 } from 'recharts'
 import xano from '../../lib/xano'
+import { getAppUsersStats, expandUsersStatsToSyntheticArray } from '../../api/cmsBridgeApi'
 import { SkeletonList } from '../../components/SharedUI'
-
-const APP_USERS_URL = 'https://x8xu-lmx9-ghko.p7.xano.io/api:I-Ku3DV8/app-users'
 
 const PERIOD_OPTIONS = [
   { key: '7d', label: '7 jours', days: 7 },
@@ -106,13 +105,14 @@ export default function Analytics() {
     const fetchAll = async () => {
       setLoading(true)
       try {
-        const [users, codes, partners, beneficiaries, contracts] = await Promise.all([
-          fetch(APP_USERS_URL).then(r => r.json()),
+        const [usersStats, codes, partners, beneficiaries, contracts] = await Promise.all([
+          getAppUsersStats(),
           xano.getAll('plan-activation-code'),
           xano.getAll('partners'),
           xano.getAll('beneficiaries'),
           xano.getAll('contracts').catch(() => []),
         ])
+        const users = expandUsersStatsToSyntheticArray(usersStats)
         setData({ users, codes, partners, beneficiaries, contracts })
       } catch (err) {
         console.error('Erreur chargement analytics:', err)
